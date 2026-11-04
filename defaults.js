@@ -41,6 +41,7 @@ export function defaultCalc() {
     name: "Новый расчёт",
     lotPrice: 23000,
     platform: "Copart",
+    bidType: "pre",
     engineCc: 2000,
     eurUsd: 1.1237,
     eurUsdAuto: true,

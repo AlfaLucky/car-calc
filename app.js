@@ -1,5 +1,5 @@
-import { compute, carAge } from "./calc.js?v=4";
-import { defaultCalc, defaultCosts, SERVICE_PACKAGES } from "./defaults.js?v=4";
+import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=5";
+import { defaultCalc, defaultCosts, SERVICE_PACKAGES } from "./defaults.js?v=5";
 
 const STORE_KEY = "carcalc.v1";
 const $ = (sel) => document.querySelector(sel);
@@ -137,7 +137,7 @@ function renderCosts() {
     tr.dataset.id = item.id;
     if (item.kind) {
       tr.className = "auto";
-      const hint = { auction: "по таблице площадки", customs: "€ по возрасту и объёму → $ по курсу", service: "выбирается в параметрах" }[item.kind];
+      const hint = { auction: "тарифы 2026", customs: "€ по возрасту и объёму → $ по курсу", service: "выбирается в параметрах" }[item.kind];
       tr.innerHTML = `<td class="lbl"></td><td class="num"><span class="auto-val"></span></td><td></td>`;
       tr.querySelector(".lbl").textContent = item.label;
       const b = document.createElement("span");
@@ -167,6 +167,14 @@ function recalc() {
     if (!row.kind) continue;
     const el = document.querySelector(`tr[data-id="${row.id}"] .auto-val`);
     if (el) el.textContent = money(row.amount);
+  }
+  const badge = document.querySelector('tr[data-id="auction"] .badge');
+  if (badge) {
+    const c = cur();
+    const b = auctionFeeBreakdown(+c.lotPrice || 0, c.platform, c.bidType);
+    const names = PLATFORM_FIXED[c.platform] || PLATFORM_FIXED.Copart;
+    badge.textContent = `авто · сбор ${money(b.buyer)} + ставка ${money(b.bid)} + ` +
+      names.map(([n, v]) => `${n} ${money(v)}`).join(" + ");
   }
   $("#lotOut").textContent = money(r.lot);
   $("#totalOut").textContent = money(r.total);

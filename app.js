@@ -1,11 +1,16 @@
-import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=7";
-import { defaultCalc, defaultCosts, SERVICE_PACKAGES } from "./defaults.js?v=7";
+import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=8";
+import {
+  defaultCalc, defaultCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS, FUELS,
+  MANUAL_DEFAULTS, PER_MARKET_FIELDS,
+} from "./defaults.js?v=8";
 
 const STORE_KEY = "carcalc.v1";
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => [...document.querySelectorAll(sel)];
 const fmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 const money = (v) => "$" + fmt.format(Math.round(v));
 const uid = () => Math.random().toString(36).slice(2, 10);
+const MARKET_IDS = Object.keys(MARKETS);
 
 // ---------- хранилище ----------
 function load() {
@@ -22,8 +27,7 @@ function load() {
 
 let db = load();
 if (!db.calcs[db.currentId]) db.currentId = Object.keys(db.calcs)[0];
-// список льготников убран — чистим старые данные
-delete db.beneficiaries;
+delete db.beneficiaries; // список льготников убран
 for (const [id, c] of Object.entries(db.calcs)) { delete c.beneficiary; db.calcs[id] = normalize(c); }
 const cur = () => db.calcs[db.currentId];
 
@@ -70,50 +74,69 @@ function importFromHash() {
   history.replaceState(null, "", location.pathname + location.search);
 }
 
+// Приводит расчёт любой старой версии к текущему формату.
 function normalize(c) {
   const base = defaultCalc();
   const out = { ...base, ...c };
+  if (!MARKETS[out.market]) out.market = "by";
+  if (!FUELS[out.fuel]) out.fuel = "petrol";
   if (!Array.isArray(out.costs)) out.costs = base.costs;
-  out.costs = out.costs.map((x) => ({ id: x.id || uid(), label: String(x.label ?? ""), value: x.value, kind: x.kind }));
-  // Старые расчёты: ручную строку «Примерная цена восстановления» превращаем в поле параметров.
-  if (!out.costs.some((x) => x.kind === "repair")) {
-    const row = { id: "repair", label: "Примерная цена восстановления", kind: "repair" };
-    const i = out.costs.findIndex((x) => x.id === "c19" || /восстановлен/i.test(x.label));
+  out.costs = out.costs.map((x) => ({ id: x.id || uid(), label: String(x.label ?? ""), kind: x.kind, values: x.values, value: x.value }));
+
+  // Поля, ставшие отдельными, — из старых ручных строк.
+  const lift = (kind, label, test, field, fallbackAt) => {
+    if (out.costs.some((x) => x.kind === kind)) return;
+    const row = { id: kind, label, kind };
+    const i = out.costs.findIndex(test);
     if (i >= 0) {
-      if (c.repairCost === undefined && out.costs[i].value !== "" && out.costs[i].value != null) out.repairCost = +out.costs[i].value;
+      const old = out.costs[i];
+      const v = old.values ? old.values.by : old.value;
+      if (field && c[field] === undefined && v !== "" && v != null) out[field] = +v;
       out.costs.splice(i, 1, row);
     } else {
-      out.costs.push(row);
+      out.costs.splice(fallbackAt(out.costs), 0, row);
     }
-  }
-  // Старые расчёты: ручную строку «Доставка до Поти» превращаем в поле параметров.
-  if (!out.costs.some((x) => x.kind === "shipping")) {
-    const row = { id: "shipping", label: "Доставка до Поти", kind: "shipping" };
-    const i = out.costs.findIndex((x) => x.id === "c1" || /доставка до поти/i.test(x.label));
-    if (i >= 0) {
-      if (c.shippingPoti === undefined && out.costs[i].value !== "" && out.costs[i].value != null) out.shippingPoti = +out.costs[i].value;
-      out.costs.splice(i, 1, row);
-    } else {
-      const at = out.costs.findIndex((x) => x.kind === "auction");
-      out.costs.splice(at + 1, 0, row);
+  };
+  const beforeRepair = (cs) => { const i = cs.findIndex((x) => x.kind === "repair"); return i >= 0 ? i : cs.length; };
+  lift("repair", "Примерная цена восстановления", (x) => x.id === "c19" || /восстановлен/i.test(x.label), "repairCost", (cs) => cs.length);
+  lift("shipping", "Доставка до Поти", (x) => x.id === "c1" || /доставка до поти/i.test(x.label), "shippingPoti",
+    (cs) => cs.findIndex((x) => x.kind === "auction") + 1);
+  lift("service", "Пакет услуг сопровождения", (x) => x.id === "c18" || /сопровожд/i.test(x.label), null, beforeRepair);
+  lift("util", "Утильсбор", (x) => x.id === "c14" || /утиль/i.test(x.label), null,
+    (cs) => cs.findIndex((x) => x.kind === "customs") + 1);
+
+  // Ручные строки: одна сумма → суммы по рынкам.
+  for (const x of out.costs) {
+    if (x.kind) { delete x.values; delete x.value; continue; }
+    if (!x.values) {
+      const v = x.value === "" || x.value == null ? 0 : +x.value;
+      const d = MANUAL_DEFAULTS[x.id];
+      x.values = { by: v, ru: d ? d.ru : v, ge: d ? d.ge : v };
     }
+    for (const m of MARKET_IDS) if (x.values[m] === undefined) x.values[m] = 0;
+    delete x.value;
   }
-  // Старые расчёты: строку «Доставка и сопровождение до бел. номеров» заменяем на пакет услуг.
-  if (!out.costs.some((x) => x.kind === "service")) {
-    const row = { id: "service", label: "Пакет услуг сопровождения", kind: "service" };
-    const i = out.costs.findIndex((x) => x.id === "c18" || /сопровожд/i.test(x.label));
-    if (i >= 0) {
-      const v = +out.costs[i].value;
-      if (SERVICE_PACKAGES.some((p) => p.price === v)) out.servicePackage = v;
-      out.costs.splice(i, 1, row);
-    } else {
-      const last = out.costs.length - 1;
-      const at = last >= 0 && /восстановлен/i.test(out.costs[last].label) ? last : out.costs.length;
-      out.costs.splice(at, 0, row);
-    }
+
+  // Поля «по рынкам».
+  const pm = defaultPerMarket();
+  out.perMarket = out.perMarket || {};
+  for (const m of MARKET_IDS) out.perMarket[m] = { ...pm[m], ...(out.perMarket[m] || {}) };
+  if (!c.perMarket) {
+    if (c.servicePackage !== undefined) out.perMarket.by.servicePackage = +c.servicePackage;
+    if (c.marketMin !== undefined) for (const m of MARKET_IDS) out.perMarket[m].marketMin = +c.marketMin;
   }
+  delete out.servicePackage;
+  delete out.marketMin;
   return out;
 }
+
+const isPerMarket = (f) => PER_MARKET_FIELDS.includes(f);
+const getField = (c, f) => (isPerMarket(f) ? c.perMarket[c.market][f] : c[f]);
+function setField(c, f, v) {
+  if (isPerMarket(f)) c.perMarket[c.market][f] = v; else c[f] = v;
+}
+// Плоское состояние для расчёта: поля выбранного рынка подставлены наверх.
+const effective = (c) => ({ ...c, ...c.perMarket[c.market] });
 
 // ---------- рендер ----------
 function renderCalcSelect() {
@@ -122,57 +145,81 @@ function renderCalcSelect() {
   for (const [id, c] of Object.entries(db.calcs)) {
     const o = document.createElement("option");
     o.value = id;
-    o.textContent = c.name || "Без названия";
+    o.textContent = (c.name || "Без названия") + " · " + (MARKETS[c.market]?.short === "Грузии" ? "Грузия" : MARKETS[c.market]?.short || "РБ");
     if (id === db.currentId) o.selected = true;
     sel.append(o);
   }
 }
 
-function renderFields() {
-  const c = cur();
-  document.querySelectorAll("[data-field]").forEach((el) => {
-    const v = c[el.dataset.field];
-    el.value = v ?? "";
-  });
-  renderServiceText();
+function renderMarket() {
+  const m = cur().market;
+  $$(".market-switch button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.market === m)));
+  $$("[data-markets]").forEach((el) => { el.hidden = !el.dataset.markets.split(" ").includes(m); });
+  $$(".mk").forEach((el) => { el.textContent = MARKETS[m].short; });
+  // Мощность нужна только РФ, но показываем и для электро/гибрида как справку — достаточно РФ.
 }
 
 function fillServiceSelect() {
+  const c = cur();
   const sel = $("#serviceSelect");
-  for (const p of SERVICE_PACKAGES) {
+  sel.innerHTML = "";
+  for (const p of SERVICE_PACKAGES.filter((x) => x.markets.includes(c.market))) {
     const o = document.createElement("option");
     o.value = p.price;
     o.textContent = p.price ? `$${p.price} — ${p.title}` : p.title;
     sel.append(o);
   }
+  const v = getField(c, "servicePackage");
+  if (![...sel.options].some((o) => +o.value === +v)) setField(c, "servicePackage", +sel.options[0].value);
+  sel.value = getField(c, "servicePackage");
 }
 
 function renderServiceText() {
-  const p = SERVICE_PACKAGES.find((x) => x.price === +cur().servicePackage);
+  const c = cur();
+  const p = SERVICE_PACKAGES.find((x) => x.markets.includes(c.market) && x.price === +getField(c, "servicePackage"));
   $("#serviceText").textContent = p ? p.text : "";
 }
 
+function renderFields() {
+  const c = cur();
+  $$("[data-field]").forEach((el) => {
+    if (el.id === "serviceSelect") return;
+    const v = getField(c, el.dataset.field);
+    el.value = v ?? "";
+  });
+  fillServiceSelect();
+  renderServiceText();
+}
+
+const KIND_HINT = {
+  auction: "тарифы 2026",
+  shipping: "вводится в параметрах",
+  repair: "вводится в параметрах",
+  service: "выбирается в параметрах",
+  customs: "",
+  util: "",
+};
+
 function renderCosts() {
+  const c = cur();
   const tb = $("#costRows");
   tb.innerHTML = "";
-  for (const item of cur().costs) {
+  for (const item of c.costs) {
     const tr = document.createElement("tr");
     tr.dataset.id = item.id;
     if (item.kind) {
       tr.className = "auto";
-      const hint = { auction: "тарифы 2026", customs: "€ по возрасту и объёму → $ по курсу", service: "выбирается в параметрах", shipping: "вводится в параметрах", repair: "вводится в параметрах" }[item.kind];
-      tr.innerHTML = `<td class="lbl"></td><td class="num"><span class="auto-val"></span></td><td></td>`;
-      tr.querySelector(".lbl").textContent = item.label;
-      const b = document.createElement("span");
-      b.className = "badge";
-      b.textContent = "авто · " + hint;
-      tr.querySelector(".lbl").append(b);
+      tr.innerHTML = `<td class="lbl"><span class="lbl-text"></span><span class="badge"></span></td><td class="num"><span class="auto-val"></span></td><td></td>`;
+      tr.querySelector(".lbl-text").textContent = item.label;
+      tr.querySelector(".badge").textContent = KIND_HINT[item.kind] ? "авто · " + KIND_HINT[item.kind] : "";
     } else {
       tr.innerHTML = `<td><input class="c-label" type="text" aria-label="Наименование"></td>
         <td class="num"><input class="c-value" type="number" step="10" inputmode="decimal" aria-label="Сумма"></td>
         <td><button type="button" class="icon c-del" title="Удалить строку">✕</button></td>`;
       tr.querySelector(".c-label").value = item.label;
-      tr.querySelector(".c-value").value = item.value ?? "";
+      const v = item.values[c.market];
+      tr.querySelector(".c-value").value = v ?? "";
+      tr.classList.toggle("zero", !+v);
     }
     tb.append(tr);
   }
@@ -185,15 +232,18 @@ function setSigned(el, v) {
 }
 
 function recalc() {
-  const r = compute(cur());
+  const c = cur();
+  const r = compute(effective(c));
   for (const row of r.rows) {
     if (!row.kind) continue;
-    const el = document.querySelector(`tr[data-id="${row.id}"] .auto-val`);
-    if (el) el.textContent = money(row.amount);
+    const tr = document.querySelector(`tr[data-id="${row.id}"]`);
+    if (!tr) continue;
+    tr.querySelector(".auto-val").textContent = money(row.amount);
+    tr.classList.toggle("zero", !row.amount);
+    if (row.note) tr.querySelector(".badge").textContent = "авто · " + row.note;
   }
   const badge = document.querySelector('tr[data-id="auction"] .badge');
   if (badge) {
-    const c = cur();
     const b = auctionFeeBreakdown(+c.lotPrice || 0, c.platform, c.bidType);
     const names = PLATFORM_FIXED[c.platform] || PLATFORM_FIXED.Copart;
     badge.textContent = `авто · сбор ${money(b.buyer)} + ставка ${money(b.bid)} + ` +
@@ -207,41 +257,56 @@ function recalc() {
   setSigned($("#rMargin"), r.marginVsMarket);
   setSigned($("#rMaxBid"), r.maxBidSheet);
   $("#rBreakEven").textContent = money(r.breakEvenBid);
-  document.title = (cur().name ? cur().name + " — " : "") + "Просчёт машины";
+  $("#customsWarn").textContent = r.warnings.join(" ");
+  $("#customsWarn").hidden = !r.warnings.length;
+  document.title = (c.name ? c.name + " — " : "") + "Просчёт машины";
 }
 
 function renderAll() {
   renderCalcSelect();
+  renderMarket();
   renderFields();
   renderCosts();
   recalc();
 }
 
-// ---------- курс EUR/USD ----------
-async function fetchRate(manual) {
+// ---------- курсы валют ----------
+async function fetchRates(manual) {
   const info = $("#rateInfo");
   info.textContent = "(загрузка…)";
+  const c = cur();
+  let ok = 0;
   try {
     const res = await fetch("https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD");
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     const rate = data?.rates?.USD;
     if (!rate) throw new Error("no rate");
+    if (manual || c.eurUsdAuto !== false) { c.eurUsd = rate; c.eurUsdAuto = true; }
     info.textContent = `(ЕЦБ, ${new Date(data.date).toLocaleDateString("ru-RU")})`;
-    if (manual || cur().eurUsdAuto !== false) {
-      cur().eurUsd = rate;
-      cur().eurUsdAuto = true;
-      $('[data-field="eurUsd"]').value = rate;
-      recalc();
-      save();
-    }
+    ok++;
+  } catch { /* ниже сообщим */ }
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD");
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const { RUB, GEL } = data?.rates || {};
+    if (!RUB || !GEL) throw new Error("no rate");
+    if (manual || c.fxAuto !== false) { c.usdRub = RUB; c.usdGel = GEL; c.fxAuto = true; }
+    $("#fxInfo").textContent = `(${new Date(data.time_last_update_unix * 1000).toLocaleDateString("ru-RU")})`;
+    ok++;
   } catch {
-    info.textContent = "(не удалось обновить, введите вручную)";
+    $("#fxInfo").textContent = "(не удалось обновить, введите вручную)";
   }
+  if (!ok) info.textContent = "(не удалось обновить, введите вручную)";
+  renderFields();
+  recalc();
+  save();
 }
 
 // ---------- события ----------
-const NUMERIC = new Set(["repairCost", "shippingPoti", "servicePackage", "lotPrice", "engineCc", "age", "eurUsd", "markupPct", "marketMin"]);
+const NUMERIC = new Set(["repairCost", "shippingPoti", "servicePackage", "lotPrice", "engineCc", "powerHp", "age",
+  "eurUsd", "usdRub", "usdGel", "markupPct", "marketMin"]);
 
 document.addEventListener("input", (e) => {
   const el = e.target;
@@ -249,19 +314,23 @@ document.addEventListener("input", (e) => {
 
   if (el.dataset.field) {
     const f = el.dataset.field;
-    c[f] = NUMERIC.has(f) ? (el.value === "" ? "" : +el.value) : el.value;
+    setField(c, f, NUMERIC.has(f) ? (el.value === "" ? "" : +el.value) : el.value);
     if (f === "prodDate") {
       c.age = carAge(c.prodDate);
       $('[data-field="age"]').value = c.age;
     }
     if (f === "eurUsd") c.eurUsdAuto = false;
+    if (f === "usdRub" || f === "usdGel") c.fxAuto = false;
     if (f === "name") renderCalcSelect();
     if (f === "servicePackage") renderServiceText();
   } else if (el.classList.contains("c-label") || el.classList.contains("c-value")) {
-    const id = el.closest("tr").dataset.id;
-    const item = c.costs.find((x) => x.id === id);
+    const tr = el.closest("tr");
+    const item = c.costs.find((x) => x.id === tr.dataset.id);
     if (el.classList.contains("c-label")) item.label = el.value;
-    else item.value = el.value === "" ? "" : +el.value;
+    else {
+      item.values[c.market] = el.value === "" ? "" : +el.value;
+      tr.classList.toggle("zero", !+el.value);
+    }
   } else {
     return;
   }
@@ -283,20 +352,27 @@ document.addEventListener("click", (e) => {
     cur().costs = cur().costs.filter((x) => x.id !== id);
     renderCosts(); recalc(); save();
   }
+  const mb = t.closest(".market-switch button");
+  if (mb) {
+    cur().market = mb.dataset.market;
+    renderAll(); save();
+  }
 });
 
 $("#btnAddCost").onclick = () => {
   const costs = cur().costs;
-  // новые строки вставляем перед «ценой восстановления», если она последняя — как пустые строки в таблице
-  const item = { id: uid(), label: "", value: 0 };
-  const last = costs[costs.length - 1];
-  if (last && /восстановлен/i.test(last.label)) costs.splice(costs.length - 1, 0, item); else costs.push(item);
+  const m = cur().market;
+  // Новая строка платится только на текущем рынке; на других — 0, можно поправить.
+  const item = { id: uid(), label: "", values: { by: 0, ru: 0, ge: 0 } };
+  item.values[m] = 0;
+  const at = costs.findIndex((x) => x.kind === "repair");
+  if (at >= 0) costs.splice(at, 0, item); else costs.push(item);
   renderCosts(); recalc(); save();
   document.querySelector(`tr[data-id="${item.id}"] .c-label`)?.focus();
 };
 
 $("#btnResetCosts").onclick = () => {
-  if (!confirm("Заменить список затрат на значения по умолчанию из таблицы?")) return;
+  if (!confirm("Заменить список затрат на значения по умолчанию (для всех рынков)?")) return;
   cur().costs = defaultCosts();
   renderCosts(); recalc(); save();
 };
@@ -308,9 +384,11 @@ $("#calcSelect").onchange = (e) => {
 
 $("#btnNew").onclick = () => {
   const id = uid();
+  const prev = cur();
   const c = defaultCalc();
   c.name = "Расчёт " + (Object.keys(db.calcs).length + 1);
-  c.eurUsd = cur().eurUsd;
+  c.market = prev.market;
+  Object.assign(c, { eurUsd: prev.eurUsd, usdRub: prev.usdRub, usdGel: prev.usdGel });
   c.prodDate = "";
   c.age = 0;
   db.calcs[id] = c;
@@ -375,8 +453,16 @@ $("#fileImport").onchange = async (e) => {
 };
 
 // ---------- старт ----------
-fillServiceSelect();
+(function fillFuel() {
+  const sel = $('[data-field="fuel"]');
+  for (const [k, v] of Object.entries(FUELS)) {
+    const o = document.createElement("option");
+    o.value = k; o.textContent = v;
+    sel.append(o);
+  }
+})();
 importFromHash();
 renderAll();
-fetchRate(false);
-$("#btnRate").onclick = () => fetchRate(true);
+fetchRates(false);
+$("#btnRate").onclick = () => fetchRates(true);
+$("#btnFx").onclick = () => fetchRates(true);

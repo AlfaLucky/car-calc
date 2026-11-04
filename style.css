@@ -149,3 +149,15 @@ td:last-child { width: 36px; text-align: center; }
   h1 { font-size: 16px; }
   .calc-switch { min-width: 100%; }
 }
+
+.market-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; padding: 2px; gap: 2px; background: var(--bg); }
+.market-switch button { border: 0; background: transparent; padding: 6px 12px; border-radius: 7px; }
+.market-switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.market-switch button[aria-pressed="true"]:hover { color: #fff; }
+[hidden] { display: none !important; }
+tr.zero td { opacity: .45; }
+tr.zero td:focus-within { opacity: 1; }
+.note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.warn { font-size: 13px; color: var(--bad); margin: 10px 0 0; }
+.badge { display: inline; }
+@media (max-width: 560px) { .card-head { flex-wrap: wrap; } }

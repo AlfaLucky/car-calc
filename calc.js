@@ -46,33 +46,140 @@ export function auctionFee(lot, platform, bidType = "pre") {
   return auctionFeeBreakdown(lot, platform, bidType).total;
 }
 
-// Пошлина для авто младше 3 лет (ЕТТ ЕАЭС): % от стоимости в евро, но не меньше X € за см³.
-// [верхняя граница стоимости в €, процент, минимум € за см³]
+// ======================================================================
+// Растаможка и утильсбор по рынкам. Ставки 2026 года — по состоянию знаний
+// на середину 2026; места, где ставка может отличаться, помечены «ПРОВЕРИТЬ».
+// ======================================================================
+
+const num = (x) => (Number.isFinite(+x) ? +x : 0);
+const usd = (v) => "$" + Math.round(v).toLocaleString("ru-RU");
+
+// --- ЕТТ ЕАЭС для физлиц (одинаково для РБ и РФ) ---
+// Младше 3 лет: % от стоимости в €, но не меньше X € за см³.
 const UNDER3 = [
   [8500, 0.54, 2.5], [16700, 0.48, 3.5], [42300, 0.48, 5.5],
   [84500, 0.48, 7.5], [169000, 0.48, 15], [Infinity, 0.48, 20],
 ];
+// 3–5 лет и старше 5 лет: € за см³ по объёму.
+const PER_CC = [
+  [1000, 1.5, 3], [1500, 1.7, 3.2], [1800, 2.5, 3.5],
+  [2300, 2.7, 4.8], [3000, 3, 5], [Infinity, 3.6, 5.7],
+];
 
-// Растаможка (ячейка B17), исправленная:
-// — ставки за см³ в евро, поэтому результат переводится в доллары по курсу EUR/USD;
-// — для авто младше 3 лет берётся % от цены лота в евро (в таблице по ошибке стоял курс E5).
-// Возвращает сумму в долларах.
-export function customsDuty({ age, engineCc, eurUsd, benefit, lotPrice }) {
-  const cc = engineCc;
-  const rate = eurUsd > 0 ? eurUsd : 1;
-  let v; // в евро
+function ettEur({ age, cc, priceEur }) {
   if (age < 3) {
-    const priceEur = (lotPrice || 0) / rate;
     const [, pct, perCc] = UNDER3.find(([max]) => priceEur <= max);
-    v = Math.max(priceEur * pct, cc * perCc);
-  } else if (age <= 5) {
-    v = cc <= 1000 ? cc * 1.5 : cc <= 1500 ? cc * 1.7 : cc <= 1800 ? cc * 2.5
-      : cc <= 2300 ? cc * 2.7 : cc <= 3000 ? cc * 3 : cc * 3.6;
-  } else {
-    v = cc <= 1000 ? cc * 3 : cc <= 1500 ? cc * 3.2 : cc <= 1800 ? cc * 3.5
-      : cc <= 2300 ? cc * 4.8 : cc <= 3000 ? cc * 5 : cc * 5.7;
+    return Math.max(priceEur * pct, cc * perCc);
   }
-  return v * rate * (benefit === "Льготник" ? 0.5 : 1);
+  const [, r35, r5] = PER_CC.find(([max]) => cc <= max);
+  return cc * (age <= 5 ? r35 : r5);
+}
+
+// --- РФ ---
+// Таможенный сбор за оформление, ₽, по таможенной стоимости в ₽ (ПРОВЕРИТЬ индексацию 2026).
+const RU_CLEARANCE = [
+  [200000, 1067], [450000, 2134], [1200000, 4269], [2700000, 11746],
+  [4200000, 16524], [5500000, 21344], [7000000, 27540], [Infinity, 30000],
+];
+// Акциз на электромобили, ₽ за л.с. (ПРОВЕРИТЬ ставку 2026).
+const RU_EV_EXCISE = [[90, 0], [150, 63], [200, 608], [300, 993], [400, 1694], [500, 1755], [Infinity, 1811]];
+const RU_VAT = 0.22; // НДС в РФ с 01.01.2026
+const RU_UTIL_BASE = 20000;
+// Утильсбор «коммерческий» (перепродажа, юрлица, а также физлица при > 160 л.с.):
+// коэффициенты × 20 000 ₽, [до 3 лет, старше 3 лет] (ПРОВЕРИТЬ индексацию 2026 и шкалу по мощности).
+const RU_UTIL_COMMERCIAL = [
+  [1000, 9.01, 23.0], [2000, 33.37, 58.7], [3000, 93.77, 141.97],
+  [3500, 107.67, 165.84], [Infinity, 137.11, 180.24],
+];
+const RU_UTIL_EV_COMMERCIAL = [33.37, 58.7];
+
+function ruUtil(s, rub) {
+  const age = num(s.age), cc = num(s.engineCc), hp = num(s.powerHp);
+  const ev = s.fuel === "electric";
+  const old = age >= 3;
+  const personalOk = s.ruImporter === "personal" && hp > 0 && hp <= 160 && (ev || cc <= 3000);
+  if (personalOk) {
+    const k = old ? 0.26 : 0.17;
+    return { rub: RU_UTIL_BASE * k, note: `льготный для физлица (≤160 л.с.): ${(RU_UTIL_BASE * k).toLocaleString("ru-RU")} ₽` };
+  }
+  const k = ev ? RU_UTIL_EV_COMMERCIAL[old ? 1 : 0]
+    : RU_UTIL_COMMERCIAL.find(([max]) => cc <= max)[old ? 2 : 1];
+  const why = s.ruImporter !== "personal" ? "для перепродажи" : hp > 160 ? "мощность > 160 л.с." : !hp ? "не указана мощность" : "объём > 3000 см³";
+  return { rub: RU_UTIL_BASE * k, note: `коммерческий (${why}): ${Math.round(RU_UTIL_BASE * k).toLocaleString("ru-RU")} ₽` };
+}
+
+function ruCustoms(s) {
+  const eurUsd = num(s.eurUsd) || 1, usdRub = num(s.usdRub) || 1;
+  const valueUsd = num(s.lotPrice);
+  const valueRub = valueUsd * usdRub;
+  const clearanceRub = RU_CLEARANCE.find(([max]) => valueRub <= max)[1];
+  if (s.fuel === "electric") {
+    const hp = num(s.powerHp);
+    const duty = valueUsd * 0.15;
+    const exciseRub = hp * RU_EV_EXCISE.find(([max]) => hp <= max)[1];
+    const excise = exciseRub / usdRub;
+    const vat = (valueUsd + duty + excise) * RU_VAT;
+    const total = duty + excise + vat + clearanceRub / usdRub;
+    return { amount: total, note: `электро: пошлина 15% ${usd(duty)} + акциз ${usd(excise)} + НДС 22% ${usd(vat)} + сбор ${clearanceRub.toLocaleString("ru-RU")} ₽` };
+  }
+  const eur = ettEur({ age: num(s.age), cc: num(s.engineCc), priceEur: valueUsd / eurUsd });
+  const duty = eur * eurUsd;
+  return { amount: duty + clearanceRub / usdRub, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € + сбор за оформление ${clearanceRub.toLocaleString("ru-RU")} ₽` };
+}
+
+// --- РБ ---
+const BY_UTIL_USD = 430; // сумма из исходной таблицы
+
+function byCustoms(s) {
+  const eurUsd = num(s.eurUsd) || 1;
+  const k = s.benefit === "Льготник" ? 0.5 : 1;
+  if (s.fuel === "electric") {
+    return { amount: 0, note: "электро: льгота РБ — без пошлины (ПРОВЕРИТЬ, действует ли в 2026)", warn: "Для электромобиля в РБ растаможка взята как 0 по льготе на электромобили — проверьте, что льгота действует на дату ввоза." };
+  }
+  const eur = ettEur({ age: num(s.age), cc: num(s.engineCc), priceEur: num(s.lotPrice) / eurUsd });
+  return { amount: eur * eurUsd * k, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € → $ по курсу${k < 1 ? ", −50% льготник" : ""}` };
+}
+
+// --- Грузия ---
+// Акциз: GEL за см³ по возрасту (ПРОВЕРИТЬ по Налоговому кодексу Грузии, ст. 188).
+const GE_EXCISE_PER_CC = [
+  [1, 1.5], [2, 1.4], [3, 1.4], [4, 1.2], [5, 1.0], [6, 0.95], [7, 1.1],
+  [8, 1.25], [9, 1.35], [10, 1.5], [11, 1.6], [12, 1.7], [13, 1.8], [14, 1.9], [Infinity, 2.5],
+];
+const GE_DECLARATION_GEL = 150; // оформление декларации/таможенные услуги (ПРОВЕРИТЬ)
+
+function geCustoms(s) {
+  const usdGel = num(s.usdGel) || 1;
+  if (s.fuel === "electric") {
+    return { amount: GE_DECLARATION_GEL / usdGel, note: `электро: без акциза, только оформление ${GE_DECLARATION_GEL} GEL` };
+  }
+  const age = num(s.age), cc = num(s.engineCc);
+  const rate = GE_EXCISE_PER_CC.find(([max]) => age < max)[1];
+  let gel = cc * rate;
+  let extra = "";
+  if (s.fuel === "hybrid") { gel *= 0.4; extra = ", гибрид −60%"; }
+  const amount = (gel + GE_DECLARATION_GEL) / usdGel;
+  return { amount, note: `акциз ${cc} см³ × ${rate} GEL${extra} = ${Math.round(gel).toLocaleString("ru-RU")} GEL + оформление ${GE_DECLARATION_GEL} GEL` };
+}
+
+function customs(s) {
+  if (s.market === "ru") return ruCustoms(s);
+  if (s.market === "ge") return geCustoms(s);
+  return byCustoms(s);
+}
+
+function util(s) {
+  if (s.market === "ru") {
+    const r = ruUtil(s, num(s.usdRub) || 1);
+    return { amount: r.rub / (num(s.usdRub) || 1), note: r.note };
+  }
+  if (s.market === "ge") return { amount: 0, note: "в Грузии не платится" };
+  return { amount: BY_UTIL_USD, note: "сумма из таблицы" };
+}
+
+// Совместимость: растаможка РБ как раньше.
+export function customsDuty({ age, engineCc, eurUsd, benefit, lotPrice }) {
+  return byCustoms({ age, engineCc, eurUsd, benefit, lotPrice, fuel: "petrol" }).amount;
 }
 
 export function carAge(prodDate, today = new Date()) {
@@ -85,37 +192,45 @@ export function carAge(prodDate, today = new Date()) {
   return Math.max(0, age);
 }
 
-const num = (x) => (Number.isFinite(+x) ? +x : 0);
-
-export function costValue(item, s) {
-  if (item.kind === "service") return num(s.servicePackage);
-  if (item.kind === "shipping") return num(s.shippingPoti);
-  if (item.kind === "repair") return num(s.repairCost);
-  if (item.kind === "auction") return auctionFee(num(s.lotPrice), s.platform, s.bidType);
-  if (item.kind === "customs") return customsDuty({
-    age: num(s.age), engineCc: num(s.engineCc), eurUsd: num(s.eurUsd), benefit: s.benefit,
-    lotPrice: num(s.lotPrice),
-  });
-  return num(item.value);
+// Сумма строки затрат (+ пояснение для автоматических строк).
+export function costDetail(item, s) {
+  switch (item.kind) {
+    case "service": return { amount: num(s.servicePackage) };
+    case "shipping": return { amount: num(s.shippingPoti) };
+    case "repair": return { amount: num(s.repairCost) };
+    case "auction": return { amount: auctionFee(num(s.lotPrice), s.platform, s.bidType) };
+    case "customs": return customs(s);
+    case "util": return util(s);
+    default: return { amount: num(item.values ? item.values[s.market || "by"] : item.value) };
+  }
 }
+
+export const costValue = (item, s) => costDetail(item, s).amount;
 
 export function compute(s) {
   const lot = num(s.lotPrice);
-  const rows = s.costs.map((c) => ({ ...c, amount: costValue(c, s) }));
+  const warnings = [];
+  const rows = s.costs.map((c) => {
+    const d = costDetail(c, s);
+    if (d.warn) warnings.push(d.warn);
+    return { ...c, amount: d.amount, note: d.note };
+  });
+  if (s.market === "ru" && !num(s.powerHp)) warnings.push("Для РФ укажите мощность в л.с. — от неё зависит утильсбор.");
+  if (s.market === "ru" && s.fuel === "hybrid") warnings.push("Гибрид в РФ посчитан как бензиновый по объёму двигателя.");
   const otherCosts = rows.reduce((a, r) => a + r.amount, 0); // всё, кроме самого лота
-  const total = lot + otherCosts;                            // B33 — себестоимость в РБ
+  const total = lot + otherCosts;
   const pct = num(s.markupPct) / 100;
-  const markup = total * pct;                                // B34
-  const finalPrice = total + markup;                         // B35
-  const market = num(s.marketMin);                           // B36
-  const maxBidSheet = market - (otherCosts + markup);        // B37 — как в таблице
-  const marginVsMarket = market - total;                     // B41
-  return { rows, lot, otherCosts, total, markup, finalPrice, market, maxBidSheet, marginVsMarket,
+  const markup = total * pct;
+  const finalPrice = total + markup;
+  const market = num(s.marketMin);
+  const maxBidSheet = market - (otherCosts + markup);        // формула исходной таблицы
+  const marginVsMarket = market - total;
+  return { rows, warnings, lot, otherCosts, total, markup, finalPrice, market, maxBidSheet, marginVsMarket,
     breakEvenBid: breakEvenBid(s) };
 }
 
 // Ставка, при которой «итоговая цена с наценкой» ровно равна рыночной цене.
-// Учитывает, что сбор аукциона и наценка тоже растут вместе со ставкой.
+// Учитывает, что сборы, растаможка и наценка тоже растут вместе со ставкой.
 function breakEvenBid(s) {
   const market = num(s.marketMin);
   const pct = num(s.markupPct) / 100;

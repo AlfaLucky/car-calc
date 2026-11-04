@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Просчёт мотоцикла</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏍️</text></svg>">
+  <link rel="stylesheet" href="style.css?v=11">
+</head>
+<body data-vehicle="moto">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <nav class="pages"><a href="./">Автомобили</a><a href="moto.html" aria-current="page">Мотоциклы</a></nav>
+      <div class="calc-switch">
+        <select id="calcSelect" aria-label="Сохранённые расчёты"></select>
+        <button id="btnNew" type="button">+ Новый</button>
+        <button id="btnDup" type="button">Копия</button>
+        <button id="btnDel" type="button" class="danger">Удалить</button>
+      </div>
+      <div class="tools">
+        <button id="btnShare" type="button">Ссылка</button>
+        <button id="btnExport" type="button">Экспорт</button>
+        <label class="btn">Импорт<input id="fileImport" type="file" accept="application/json" hidden></label>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="col-main">
+      <section class="card">
+        <label class="name-field">
+          <span>Название расчёта</span>
+          <input data-field="name" type="text" placeholder="Например: Yamaha MT-09 2021, лот 12345678">
+        </label>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Параметры мотоцикла</h2>
+          <div class="market-switch" role="group" aria-label="Рынок продажи">
+            <button type="button" data-market="by">Беларусь</button>
+            <button type="button" data-market="ru">Россия</button>
+            <button type="button" data-market="ge">Грузия</button>
+          </div>
+        </div>
+        <div class="grid">
+          <label><span>Цена выигранного лота, $</span>
+            <input data-field="lotPrice" type="number" min="0" step="50" inputmode="decimal"></label>
+          <label><span>Площадка</span>
+            <select data-field="platform"><option>Copart</option><option>IAAI</option></select></label>
+          <label><span>Как ставим на аукционе</span>
+            <select data-field="bidType"><option value="pre">Ставка заранее (pre-bid)</option><option value="live">Ставка вживую (live)</option></select></label>
+          <label><span>Доставка до Поти, $ <small>(примерно, уточните у перевозчика)</small></span>
+            <input data-field="shippingPoti" type="number" min="0" step="50" inputmode="decimal" placeholder="2000"></label>
+          <label><span>Тип топлива</span>
+            <select data-field="fuel"></select></label>
+          <label><span>Объём двигателя, см³</span>
+            <input data-field="engineCc" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label data-markets="ru"><span>Мощность, л.с. <small>(свыше 150 — акциз)</small></span>
+            <input data-field="powerHp" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label><span>Дата производства</span>
+            <input data-field="prodDate" type="date"></label>
+          <label><span>Возраст автомобиля, лет <small>(считается от даты, можно поправить)</small></span>
+            <input data-field="age" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label data-markets="by"><span>Растаможка</span>
+            <select data-field="benefit"><option>Льготник</option><option>Обычный</option></select></label>
+          <label class="span2"><span>Пакет услуг сопровождения</span>
+            <select data-field="servicePackage" id="serviceSelect"></select>
+            <small class="hint" id="serviceText"></small></label>
+          <label><span>Примерная цена восстановления, $</span>
+            <input data-field="repairCost" type="number" min="0" step="100" inputmode="decimal" placeholder="3000"></label>
+          <label><span>Курс EUR → USD <small id="rateInfo"></small></span>
+            <span class="with-btn">
+              <input data-field="eurUsd" type="number" min="0" step="0.0001" inputmode="decimal">
+              <button id="btnRate" type="button" title="Обновить курс">↻</button>
+            </span></label>
+          <label data-markets="ru"><span>Курс USD → RUB <small id="fxInfo"></small></span>
+            <span class="with-btn">
+              <input data-field="usdRub" type="number" min="0" step="0.01" inputmode="decimal">
+              <button id="btnFx" type="button" title="Обновить курсы">↻</button>
+            </span></label>
+          <label data-markets="by"><span>Курс USD → BYN</span>
+            <input data-field="usdByn" type="number" min="0" step="0.0001" inputmode="decimal"></label>
+          <label data-markets="ge"><span>Курс USD → GEL</span>
+            <input data-field="usdGel" type="number" min="0" step="0.001" inputmode="decimal"></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Затраты</h2>
+          <button id="btnAddCost" type="button">+ Добавить строку</button>
+        </div>
+        <table class="costs">
+          <thead><tr><th>Наименование</th><th class="num">Сумма, $</th><th></th></tr></thead>
+          <tbody id="costRows"></tbody>
+          <tfoot>
+            <tr><td>Выигранный лот</td><td class="num" id="lotOut"></td><td></td></tr>
+            <tr class="sum"><td>Себестоимость мотоцикла в <span class="mk">РБ</span></td><td class="num" id="totalOut"></td><td></td></tr>
+          </tfoot>
+        </table>
+        <p class="warn" id="customsWarn" hidden></p>
+        <p class="note">Суммы ручных строк свои для каждого рынка. 0 — статья на этом рынке не платится.</p>
+        <button id="btnResetCosts" type="button" class="link">Вернуть список затрат по умолчанию</button>
+      </section>
+
+      <section class="card">
+        <h2>Заметки</h2>
+        <textarea data-field="notes" rows="3" placeholder="Ссылка на лот, VIN, комментарии…"></textarea>
+      </section>
+    </div>
+
+    <aside class="col-side">
+      <section class="card result">
+        <h2>Итог</h2>
+        <dl>
+          <dt>Себестоимость в <span class="mk">РБ</span></dt><dd id="rTotal"></dd>
+          <dt class="inline-input">Наценка
+            <span class="pct"><input data-field="markupPct" type="number" min="0" step="1" inputmode="decimal">%</span></dt>
+          <dd id="rMarkup"></dd>
+          <dt class="big">Итоговая цена с учётом прибыли</dt><dd class="big" id="rFinal"></dd>
+        </dl>
+        <hr>
+        <label><span>Минимальная цена на рынке <span class="mk">РБ</span>, $</span>
+          <input data-field="marketMin" type="number" min="0" step="100" inputmode="decimal"></label>
+        <dl>
+          <dt>Разница с рынком (без наценки)</dt><dd id="rMargin"></dd>
+          <dt>Максимальная цена ставки <small>(формула таблицы)</small></dt><dd id="rMaxBid"></dd>
+          <dt>Ставка, при которой цена с наценкой = рынку</dt><dd id="rBreakEven"></dd>
+        </dl>
+        <p class="status" id="saveStatus"></p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js?v=11"></script>
+</body>
+</html>

@@ -32,12 +32,32 @@ export const MANUAL_DEFAULTS = {
   c17: { label: "Услуга СВХ", by: 60, ru: 60, ge: 0 },
 };
 
-const manual = (id) => {
-  const d = MANUAL_DEFAULTS[id];
-  return { id, label: d.label, values: { by: d.by, ru: d.ru, ge: d.ge } };
+// Мотоциклы: примерные суммы (меньше, чем у машины), правятся на странице.
+export const MOTO_MANUAL_DEFAULTS = {
+  c2: { label: "Услуги льготника", by: 0, ru: 0, ge: 0 },
+  c3: { label: "Сборы порта", by: 80, ru: 80, ge: 80 },
+  c4: { label: "Доставка мотоцикла с Поти до Батуми", by: 50, ru: 50, ge: 50 },
+  c5: { label: "Оплата за сервис заказа мотоцикла", by: 200, ru: 200, ge: 200 },
+  c6: { label: "Реэкспорт", by: 240, ru: 240, ge: 0 },
+  c7: { label: "Доставка до места продажи (прицеп / эвакуатор)", by: 300, ru: 300, ge: 0 },
+  c8: { label: "Брокер", by: 300, ru: 300, ge: 0 },
+  c9: { label: "GPS пломба (транзит через РФ)", by: 300, ru: 0, ge: 0 },
+  c10: { label: "Страховка в РФ", by: 20, ru: 20, ge: 0 },
+  c11: { label: "Страховка в РБ", by: 10, ru: 0, ge: 0 },
+  c12: { label: "Стоянка на границе", by: 15, ru: 15, ge: 0 },
+  c15: { label: "Таможенные сборы", by: 40, ru: 0, ge: 0 },
+  c16: { label: "Услуги таможни", by: 90, ru: 90, ge: 0 },
+  c17: { label: "Услуга СВХ", by: 60, ru: 60, ge: 0 },
 };
 
-export function defaultCosts() {
+export const manualDefaultsFor = (vehicle) => (vehicle === "moto" ? MOTO_MANUAL_DEFAULTS : MANUAL_DEFAULTS);
+
+export function defaultCosts(vehicle = "car") {
+  const defs = manualDefaultsFor(vehicle);
+  const manual = (id) => {
+    const d = defs[id];
+    return d ? { id, label: d.label, values: { by: d.by, ru: d.ru, ge: d.ge } } : null;
+  };
   return [
     { id: "auction", label: "Сборы аукциона", kind: "auction" },
     { id: "shipping", label: "Доставка до Поти", kind: "shipping" },
@@ -48,7 +68,7 @@ export function defaultCosts() {
     manual("c15"), manual("c16"), manual("c17"),
     { id: "service", label: "Пакет услуг сопровождения", kind: "service" },
     { id: "repair", label: "Примерная цена восстановления", kind: "repair" },
-  ];
+  ].filter(Boolean);
 }
 
 // Пакеты услуг сопровождения: цена, что входит и на каких рынках доступен.
@@ -67,16 +87,36 @@ export const SERVICE_PACKAGES = [
 // Поля, у которых на каждом рынке своё значение.
 export const PER_MARKET_FIELDS = ["servicePackage", "marketMin"];
 
-export function defaultPerMarket() {
+export function defaultPerMarket(vehicle = "car") {
+  const price = vehicle === "moto" ? 16000 : 47000;
   return {
-    by: { servicePackage: 2000, marketMin: 47000 },
-    ru: { servicePackage: 1000, marketMin: 47000 },
-    ge: { servicePackage: 500, marketMin: 47000 },
+    by: { servicePackage: 2000, marketMin: price },
+    ru: { servicePackage: 1000, marketMin: price },
+    ge: { servicePackage: 500, marketMin: price },
   };
 }
 
-export function defaultCalc() {
+export const FUELS_MOTO = { petrol: "Бензин", electric: "Электро" };
+
+export function defaultCalc(vehicle = "car") {
+  if (vehicle === "moto") {
+    return {
+      ...defaultCalc("car"),
+      vehicle: "moto",
+      lotPrice: 6000,
+      engineCc: 1000,
+      powerHp: 100,
+      prodDate: "2020-06-01",
+      age: 6,
+      benefit: "Обычный",
+      shippingPoti: 900,
+      repairCost: 800,
+      perMarket: defaultPerMarket("moto"),
+      costs: defaultCosts("moto"),
+    };
+  }
   return {
+    vehicle: "car",
     name: "Новый расчёт",
     market: "by",
     lotPrice: 23000,
@@ -99,8 +139,8 @@ export function defaultCalc() {
     shippingPoti: 2000,
     repairCost: 3000,
     markupPct: 30,
-    perMarket: defaultPerMarket(),
+    perMarket: defaultPerMarket("car"),
     notes: "",
-    costs: defaultCosts(),
+    costs: defaultCosts("car"),
   };
 }

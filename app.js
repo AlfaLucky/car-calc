@@ -1,10 +1,16 @@
-import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=10";
+import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=11";
 import {
-  defaultCalc, defaultCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS, FUELS,
-  MANUAL_DEFAULTS, PER_MARKET_FIELDS,
-} from "./defaults.js?v=10";
+  defaultCalc as baseCalc, defaultCosts as baseCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS,
+  FUELS as CAR_FUELS, FUELS_MOTO, manualDefaultsFor, PER_MARKET_FIELDS,
+} from "./defaults.js?v=11";
 
-const STORE_KEY = "carcalc.v1";
+// Страница машин (index.html) или мотоциклов (moto.html): у каждой свой список расчётов.
+const VEHICLE = document.body.dataset.vehicle === "moto" ? "moto" : "car";
+const STORE_KEY = VEHICLE === "moto" ? "carcalc.moto.v1" : "carcalc.v1";
+const FUELS = VEHICLE === "moto" ? FUELS_MOTO : CAR_FUELS;
+const MANUAL_DEFAULTS = manualDefaultsFor(VEHICLE);
+const defaultCalc = () => baseCalc(VEHICLE);
+const defaultCosts = () => baseCosts(VEHICLE);
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const fmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
@@ -78,6 +84,7 @@ function importFromHash() {
 function normalize(c) {
   const base = defaultCalc();
   const out = { ...base, ...c };
+  out.vehicle = VEHICLE;
   if (!MARKETS[out.market]) out.market = "by";
   if (!FUELS[out.fuel]) out.fuel = "petrol";
   if (!Array.isArray(out.costs)) out.costs = base.costs;
@@ -118,7 +125,7 @@ function normalize(c) {
   }
 
   // Поля «по рынкам».
-  const pm = defaultPerMarket();
+  const pm = defaultPerMarket(VEHICLE);
   out.perMarket = out.perMarket || {};
   for (const m of MARKET_IDS) out.perMarket[m] = { ...pm[m], ...(out.perMarket[m] || {}) };
   if (!c.perMarket) {
@@ -264,7 +271,7 @@ function recalc() {
   $("#rBreakEven").textContent = money(r.breakEvenBid);
   $("#customsWarn").textContent = r.warnings.join(" ");
   $("#customsWarn").hidden = !r.warnings.length;
-  document.title = (c.name ? c.name + " — " : "") + "Просчёт машины";
+  document.title = (c.name ? c.name + " — " : "") + (VEHICLE === "moto" ? "Просчёт мотоцикла" : "Просчёт машины");
 }
 
 function renderAll() {

@@ -161,3 +161,8 @@ tr.zero td:focus-within { opacity: 1; }
 .warn { font-size: 13px; color: var(--bad); margin: 10px 0 0; }
 .badge { display: inline; }
 @media (max-width: 560px) { .card-head { flex-wrap: wrap; } }
+
+.pages { display: inline-flex; gap: 4px; }
+.pages a { padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 600; white-space: nowrap; }
+.pages a:hover { color: var(--accent); }
+.pages a[aria-current="page"] { color: var(--text); background: var(--bg); }

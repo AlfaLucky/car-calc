@@ -1,4 +1,4 @@
-import { RU_UTIL_EV, RU_UTIL_ICE } from "./ru_util_table.js?v=10";
+import { RU_UTIL_EV, RU_UTIL_ICE } from "./ru_util_table.js?v=11";
 // Чистая логика расчёта — по формулам Google-таблицы «Просчет машины»
 // (сборы аукциона обновлены до тарифов 2026, растаможка исправлена — см. ниже).
 
@@ -196,13 +196,86 @@ function geCustoms(s) {
   };
 }
 
+// ======================================================================
+// Мотоциклы (ТН ВЭД 8711). Сверено 05.11.2026:
+//  ЕАЭС: Решение ЕЭК №107, прил. 2, табл. 2, п. 1 — для мотоциклов НЕ ЕТТ, а совокупный платёж
+//        (пошлина по ЕТ ТН ВЭД + национальные налоги); ставки пошлины — ЕТ ТН ВЭД 8711.
+//  РФ: акциз — НК РФ ст. 193 (ред. 425-ФЗ), > 150 л.с.: 613 ₽/л.с. в 2026; НДС 22%; утильсбора нет (ПП №1291 — M/N/O).
+//  РБ: НДС 20%, акциза нет, утильсбора нет (ПСМ №195 — нет категории L); льгота 50% (Указ №140) действует.
+//  Грузия: акциз — НК ст. 188, п. 1, строка 4¹ (GEL/см³ по возрасту); НДС освобождён (ст. 173 «ზ»);
+//          импортного налога нет; электро — без акциза (ст. 194 «ლ»).
+// ======================================================================
+
+// Пошлина ЕТ ТН ВЭД: до 250 см³ — 14%, 250–800 см³ — 15%, свыше 800 см³ — 10%, электро — 14%.
+function motoDutyRate(s) {
+  if (s.fuel === "electric") return 0.14;
+  const cc = num(s.engineCc);
+  return cc <= 250 ? 0.14 : cc <= 800 ? 0.15 : 0.10;
+}
+
+// Акциз РФ на мотоциклы > 150 л.с., ₽ за л.с. (на всю мощность).
+const RU_MOTO_EXCISE = { 2026: 613, 2027: 638, 2028: 664 };
+const ruMotoExciseRate = () => RU_MOTO_EXCISE[Math.min(2028, Math.max(2026, new Date().getFullYear()))];
+
+function motoRuCustoms(s) {
+  const usdRub = num(s.usdRub) || 1;
+  const value = num(s.lotPrice);
+  const rate = motoDutyRate(s);
+  const duty = value * rate;
+  const hp = num(s.powerHp);
+  const exciseRub = hp > 150 ? hp * ruMotoExciseRate() : 0;
+  const excise = exciseRub / usdRub;
+  const vat = (value + duty + excise) * RU_VAT;
+  const clearanceRub = RU_CLEARANCE.find(([max]) => value * usdRub <= max)[1];
+  return {
+    amount: duty + excise + vat + clearanceRub / usdRub,
+    note: `пошлина ${Math.round(rate * 100)}% ${usd(duty)}${excise ? ` + акциз ${rub(exciseRub)}` : ""} + НДС 22% ${usd(vat)} + сбор ${rub(clearanceRub)}`,
+  };
+}
+
+function motoByCustoms(s) {
+  const value = num(s.lotPrice);
+  const rate = motoDutyRate(s);
+  const duty = value * rate;
+  const vat = (value + duty) * 0.2;
+  const k = s.benefit === "Льготник" ? 0.5 : 1;
+  return {
+    amount: (duty + vat) * k,
+    note: `пошлина ${Math.round(rate * 100)}% ${usd(duty)} + НДС 20% ${usd(vat)}${k < 1 ? ", −50% льготник" : ""}`,
+  };
+}
+
+// Грузия: акциз по возрасту (год оформления − год выпуска), GEL за см³.
+const GE_MOTO_EXCISE = [[0, 1.5], [1, 1.3], [5, 0.7], [9, 0.8], [10, 1.0], [11, 1.3], [12, 1.5], [13, 1.8], [14, 2.1], [Infinity, 2.4]];
+
+function motoGeCustoms(s) {
+  const usdGel = num(s.usdGel) || 1;
+  if (s.fuel === "electric") {
+    return { amount: GE_FEES_GEL / usdGel, note: `электро: без акциза, сборы ≈ ${GE_FEES_GEL} GEL` };
+  }
+  const cc = num(s.engineCc);
+  const age = Math.max(0, geAge(s));
+  const rate = GE_MOTO_EXCISE.find(([max]) => age <= max)[1];
+  const excise = cc * rate;
+  return {
+    amount: (excise + GE_FEES_GEL) / usdGel,
+    note: `акциз ${cc} см³ × ${rate} GEL = ${Math.round(excise)} + сборы ≈ ${GE_FEES_GEL} GEL (возраст ${age}), без НДС`,
+  };
+}
+
 function customs(s) {
+  if (s.vehicle === "moto") {
+    if (s.market === "ru") return motoRuCustoms(s);
+    if (s.market === "ge") return motoGeCustoms(s);
+    return motoByCustoms(s);
+  }
   if (s.market === "ru") return ruCustoms(s);
   if (s.market === "ge") return geCustoms(s);
   return byCustoms(s);
 }
 
 function util(s) {
+  if (s.vehicle === "moto") return { amount: 0, note: "для мотоциклов не платится" };
   if (s.market === "ru") {
     const r = ruUtil(s);
     return { amount: r.rub / (num(s.usdRub) || 1), note: r.note };
@@ -249,7 +322,9 @@ export function compute(s) {
     if (d.warn) warnings.push(d.warn);
     return { ...c, amount: d.amount, note: d.note };
   });
-  if (s.market === "ru" && !num(s.powerHp)) warnings.push("Для РФ укажите мощность в л.с. — от неё зависит утильсбор.");
+  if (s.market === "ru" && !num(s.powerHp)) warnings.push(s.vehicle === "moto"
+    ? "Для РФ укажите мощность в л.с. — свыше 150 л.с. платится акциз."
+    : "Для РФ укажите мощность в л.с. — от неё зависит утильсбор.");
   if (s.market === "ru" && s.fuel === "hybrid") warnings.push("Гибрид в РФ: пошлина по объёму двигателя; для утильсбора укажите суммарную мощность ДВС + электромотора.");
   if (s.market === "ru" && s.fuel === "electric") warnings.push("Электро в РФ: укажите 30-минутную мощность электромотора в л.с.");
   const otherCosts = rows.reduce((a, r) => a + r.amount, 0); // всё, кроме самого лота

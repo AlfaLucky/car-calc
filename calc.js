@@ -89,6 +89,7 @@ const num = (x) => (Number.isFinite(+x) ? +x : 0);
 
 export function costValue(item, s) {
   if (item.kind === "service") return num(s.servicePackage);
+  if (item.kind === "shipping") return num(s.shippingPoti);
   if (item.kind === "auction") return auctionFee(num(s.lotPrice), s.platform, s.bidType);
   if (item.kind === "customs") return customsDuty({
     age: num(s.age), engineCc: num(s.engineCc), eurUsd: num(s.eurUsd), benefit: s.benefit,

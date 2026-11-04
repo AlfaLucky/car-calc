@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Просчёт машины</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <header class="topbar">
@@ -43,6 +43,8 @@
             <select data-field="platform"><option>Copart</option><option>IAAI</option></select></label>
           <label><span>Как ставим на аукционе</span>
             <select data-field="bidType"><option value="pre">Ставка заранее (pre-bid)</option><option value="live">Ставка вживую (live)</option></select></label>
+          <label><span>Доставка до Поти, $ <small>(примерно, уточните у перевозчика)</small></span>
+            <input data-field="shippingPoti" type="number" min="0" step="50" inputmode="decimal" placeholder="2000"></label>
           <label><span>Объём двигателя, см³</span>
             <input data-field="engineCc" type="number" min="0" step="1" inputmode="numeric"></label>
           <label><span>Дата производства</span>
@@ -110,6 +112,6 @@
   <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=5"></script>
+  <script type="module" src="app.js?v=6"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 export function defaultCosts() {
   return [
     { id: "auction", label: "Сборы аукциона", kind: "auction" },
-    { id: "c1", label: "Доставка до Поти (максимальная)", value: 2000 },
+    { id: "shipping", label: "Доставка до Поти", kind: "shipping" },
     { id: "c2", label: "Услуги льготника", value: 500 },
     { id: "c3", label: "Сборы порта", value: 110 },
     { id: "c4", label: "Доставка автомобиля с Поти до Батуми", value: 70 },
@@ -48,6 +48,7 @@ export function defaultCalc() {
     prodDate: "2017-09-01",
     age: 4,
     benefit: "Льготник",
+    shippingPoti: 2000,
     servicePackage: 2000,
     markupPct: 30,
     marketMin: 47000,

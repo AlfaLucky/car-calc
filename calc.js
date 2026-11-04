@@ -1,4 +1,4 @@
-import { RU_UTIL_EV, RU_UTIL_ICE } from "./ru_util_table.js?v=9";
+import { RU_UTIL_EV, RU_UTIL_ICE } from "./ru_util_table.js?v=10";
 // Чистая логика расчёта — по формулам Google-таблицы «Просчет машины»
 // (сборы аукциона обновлены до тарифов 2026, растаможка исправлена — см. ниже).
 
@@ -147,14 +147,15 @@ function byCustoms(s) {
   const k = s.benefit === "Льготник" ? 0.5 : 1;
   const disc = k < 1 ? ", −50% льготник" : "";
   if (s.fuel === "electric") {
-    // Квота 0% пошлины для физлиц на 2026 исчерпана → 15%. НДС: освобождение, если ≤ 5 лет.
+    // Пошлина: 0% по льготе для электромобилей, либо 15%, если льгота не действует.
+    // НДС: физлица освобождены, если машине ≤ 5 лет (Указ №428 — до 31.12.2028).
     const value = num(s.lotPrice);
-    const duty = value * 0.15;
+    const zero = s.byEvDuty !== "15";
+    const duty = zero ? 0 : value * 0.15;
     const vat = num(s.age) <= 5 ? 0 : (value + duty) * 0.2;
     return {
       amount: (duty + vat) * k,
-      note: `электро: пошлина 15% ${usd(duty)}${vat ? ` + НДС 20% ${usd(vat)}` : ", без НДС (≤ 5 лет)"}${disc}`,
-      warn: "РБ, электро: квота на ввоз без пошлины для физлиц в 2026 исчерпана — посчитано 15%. Если квота откроется, пошлина будет 0.",
+      note: `электро: пошлина ${zero ? "0% (льгота)" : "15% " + usd(duty)}${vat ? ` + НДС 20% ${usd(vat)}` : ", без НДС (≤ 5 лет)"}${disc}`,
     };
   }
   const eur = ettEur({ age: num(s.age), cc: num(s.engineCc), priceEur: num(s.lotPrice) / eurUsd });

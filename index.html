@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Просчёт машины</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <header class="topbar">
@@ -64,6 +64,8 @@
             <input data-field="prodDate" type="date"></label>
           <label><span>Возраст автомобиля, лет <small>(считается от даты, можно поправить)</small></span>
             <input data-field="age" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label data-markets="by" data-fuels="electric"><span>Пошлина на электро в РБ</span>
+            <select data-field="byEvDuty"><option value="0">0% — льгота для электромобилей</option><option value="15">15% — если льгота не действует</option></select></label>
           <label data-markets="by"><span>Растаможка</span>
             <select data-field="benefit"><option>Льготник</option><option>Обычный</option></select></label>
           <label class="span2"><span>Пакет услуг сопровождения</span>
@@ -138,6 +140,6 @@
   <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=9"></script>
+  <script type="module" src="app.js?v=10"></script>
 </body>
 </html>

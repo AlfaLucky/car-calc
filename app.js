@@ -1,8 +1,8 @@
-import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=9";
+import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=10";
 import {
   defaultCalc, defaultCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS, FUELS,
   MANUAL_DEFAULTS, PER_MARKET_FIELDS,
-} from "./defaults.js?v=9";
+} from "./defaults.js?v=10";
 
 const STORE_KEY = "carcalc.v1";
 const $ = (sel) => document.querySelector(sel);
@@ -154,7 +154,12 @@ function renderCalcSelect() {
 function renderMarket() {
   const m = cur().market;
   $$(".market-switch button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.market === m)));
-  $$("[data-markets]").forEach((el) => { el.hidden = !el.dataset.markets.split(" ").includes(m); });
+  const fuel = cur().fuel;
+  $$("[data-markets], [data-fuels]").forEach((el) => {
+    const okM = !el.dataset.markets || el.dataset.markets.split(" ").includes(m);
+    const okF = !el.dataset.fuels || el.dataset.fuels.split(" ").includes(fuel);
+    el.hidden = !(okM && okF);
+  });
   $$(".mk").forEach((el) => { el.textContent = MARKETS[m].short; });
   // Мощность нужна только РФ, но показываем и для электро/гибрида как справку — достаточно РФ.
 }
@@ -322,6 +327,7 @@ document.addEventListener("input", (e) => {
     if (f === "eurUsd") c.eurUsdAuto = false;
     if (f === "usdRub" || f === "usdGel" || f === "usdByn") c.fxAuto = false;
     if (f === "name") renderCalcSelect();
+    if (f === "fuel") renderMarket();
     if (f === "servicePackage") renderServiceText();
   } else if (el.classList.contains("c-label") || el.classList.contains("c-value")) {
     const tr = el.closest("tr");

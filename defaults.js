@@ -90,6 +90,7 @@ export function defaultCalc() {
     usdRub: 81,
     usdGel: 2.7,
     usdByn: 2.95,
+    byEvDuty: "0",
     fxAuto: true,
     prodDate: "2017-09-01",
     age: 4,

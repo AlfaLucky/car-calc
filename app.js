@@ -1,5 +1,5 @@
-import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=6";
-import { defaultCalc, defaultCosts, SERVICE_PACKAGES } from "./defaults.js?v=6";
+import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=7";
+import { defaultCalc, defaultCosts, SERVICE_PACKAGES } from "./defaults.js?v=7";
 
 const STORE_KEY = "carcalc.v1";
 const $ = (sel) => document.querySelector(sel);
@@ -75,6 +75,17 @@ function normalize(c) {
   const out = { ...base, ...c };
   if (!Array.isArray(out.costs)) out.costs = base.costs;
   out.costs = out.costs.map((x) => ({ id: x.id || uid(), label: String(x.label ?? ""), value: x.value, kind: x.kind }));
+  // Старые расчёты: ручную строку «Примерная цена восстановления» превращаем в поле параметров.
+  if (!out.costs.some((x) => x.kind === "repair")) {
+    const row = { id: "repair", label: "Примерная цена восстановления", kind: "repair" };
+    const i = out.costs.findIndex((x) => x.id === "c19" || /восстановлен/i.test(x.label));
+    if (i >= 0) {
+      if (c.repairCost === undefined && out.costs[i].value !== "" && out.costs[i].value != null) out.repairCost = +out.costs[i].value;
+      out.costs.splice(i, 1, row);
+    } else {
+      out.costs.push(row);
+    }
+  }
   // Старые расчёты: ручную строку «Доставка до Поти» превращаем в поле параметров.
   if (!out.costs.some((x) => x.kind === "shipping")) {
     const row = { id: "shipping", label: "Доставка до Поти", kind: "shipping" };
@@ -149,7 +160,7 @@ function renderCosts() {
     tr.dataset.id = item.id;
     if (item.kind) {
       tr.className = "auto";
-      const hint = { auction: "тарифы 2026", customs: "€ по возрасту и объёму → $ по курсу", service: "выбирается в параметрах", shipping: "вводится в параметрах" }[item.kind];
+      const hint = { auction: "тарифы 2026", customs: "€ по возрасту и объёму → $ по курсу", service: "выбирается в параметрах", shipping: "вводится в параметрах", repair: "вводится в параметрах" }[item.kind];
       tr.innerHTML = `<td class="lbl"></td><td class="num"><span class="auto-val"></span></td><td></td>`;
       tr.querySelector(".lbl").textContent = item.label;
       const b = document.createElement("span");
@@ -230,7 +241,7 @@ async function fetchRate(manual) {
 }
 
 // ---------- события ----------
-const NUMERIC = new Set(["shippingPoti", "servicePackage", "lotPrice", "engineCc", "age", "eurUsd", "markupPct", "marketMin"]);
+const NUMERIC = new Set(["repairCost", "shippingPoti", "servicePackage", "lotPrice", "engineCc", "age", "eurUsd", "markupPct", "marketMin"]);
 
 document.addEventListener("input", (e) => {
   const el = e.target;

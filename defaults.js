@@ -21,7 +21,7 @@ export function defaultCosts() {
     { id: "c16", label: "Услуги таможни", value: 90 },
     { id: "c17", label: "Услуга СВХ", value: 60 },
     { id: "service", label: "Пакет услуг сопровождения", kind: "service" },
-    { id: "c19", label: "Примерная цена восстановления", value: 3000 },
+    { id: "repair", label: "Примерная цена восстановления", kind: "repair" },
   ];
 }
 
@@ -49,6 +49,7 @@ export function defaultCalc() {
     age: 4,
     benefit: "Льготник",
     shippingPoti: 2000,
+    repairCost: 3000,
     servicePackage: 2000,
     markupPct: 30,
     marketMin: 47000,

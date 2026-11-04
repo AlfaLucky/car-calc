@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Просчёт машины</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <header class="topbar">
@@ -56,6 +56,8 @@
           <label class="span2"><span>Пакет услуг сопровождения</span>
             <select data-field="servicePackage" id="serviceSelect"></select>
             <small class="hint" id="serviceText"></small></label>
+          <label><span>Примерная цена восстановления, $</span>
+            <input data-field="repairCost" type="number" min="0" step="100" inputmode="decimal" placeholder="3000"></label>
           <label><span>Курс EUR → USD <small id="rateInfo"></small></span>
             <span class="with-btn">
               <input data-field="eurUsd" type="number" min="0" step="0.0001" inputmode="decimal">
@@ -112,6 +114,6 @@
   <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=6"></script>
+  <script type="module" src="app.js?v=7"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-import { compute, carAge } from "./calc.js?v=3";
-import { defaultCalc, defaultCosts } from "./defaults.js?v=3";
+import { compute, carAge } from "./calc.js?v=4";
+import { defaultCalc, defaultCosts, SERVICE_PACKAGES } from "./defaults.js?v=4";
 
 const STORE_KEY = "carcalc.v1";
 const $ = (sel) => document.querySelector(sel);
@@ -24,7 +24,7 @@ let db = load();
 if (!db.calcs[db.currentId]) db.currentId = Object.keys(db.calcs)[0];
 // список льготников убран — чистим старые данные
 delete db.beneficiaries;
-for (const c of Object.values(db.calcs)) delete c.beneficiary;
+for (const [id, c] of Object.entries(db.calcs)) { delete c.beneficiary; db.calcs[id] = normalize(c); }
 const cur = () => db.calcs[db.currentId];
 
 let saveTimer;
@@ -75,6 +75,20 @@ function normalize(c) {
   const out = { ...base, ...c };
   if (!Array.isArray(out.costs)) out.costs = base.costs;
   out.costs = out.costs.map((x) => ({ id: x.id || uid(), label: String(x.label ?? ""), value: x.value, kind: x.kind }));
+  // Старые расчёты: строку «Доставка и сопровождение до бел. номеров» заменяем на пакет услуг.
+  if (!out.costs.some((x) => x.kind === "service")) {
+    const row = { id: "service", label: "Пакет услуг сопровождения", kind: "service" };
+    const i = out.costs.findIndex((x) => x.id === "c18" || /сопровожд/i.test(x.label));
+    if (i >= 0) {
+      const v = +out.costs[i].value;
+      if (SERVICE_PACKAGES.some((p) => p.price === v)) out.servicePackage = v;
+      out.costs.splice(i, 1, row);
+    } else {
+      const last = out.costs.length - 1;
+      const at = last >= 0 && /восстановлен/i.test(out.costs[last].label) ? last : out.costs.length;
+      out.costs.splice(at, 0, row);
+    }
+  }
   return out;
 }
 
@@ -97,6 +111,22 @@ function renderFields() {
     const v = c[el.dataset.field];
     el.value = v ?? "";
   });
+  renderServiceText();
+}
+
+function fillServiceSelect() {
+  const sel = $("#serviceSelect");
+  for (const p of SERVICE_PACKAGES) {
+    const o = document.createElement("option");
+    o.value = p.price;
+    o.textContent = p.price ? `$${p.price} — ${p.title}` : p.title;
+    sel.append(o);
+  }
+}
+
+function renderServiceText() {
+  const p = SERVICE_PACKAGES.find((x) => x.price === +cur().servicePackage);
+  $("#serviceText").textContent = p ? p.text : "";
 }
 
 function renderCosts() {
@@ -107,7 +137,7 @@ function renderCosts() {
     tr.dataset.id = item.id;
     if (item.kind) {
       tr.className = "auto";
-      const hint = item.kind === "auction" ? "по таблице площадки" : "€ по возрасту и объёму → $ по курсу";
+      const hint = { auction: "по таблице площадки", customs: "€ по возрасту и объёму → $ по курсу", service: "выбирается в параметрах" }[item.kind];
       tr.innerHTML = `<td class="lbl"></td><td class="num"><span class="auto-val"></span></td><td></td>`;
       tr.querySelector(".lbl").textContent = item.label;
       const b = document.createElement("span");
@@ -180,7 +210,7 @@ async function fetchRate(manual) {
 }
 
 // ---------- события ----------
-const NUMERIC = new Set(["lotPrice", "engineCc", "age", "eurUsd", "markupPct", "marketMin"]);
+const NUMERIC = new Set(["servicePackage", "lotPrice", "engineCc", "age", "eurUsd", "markupPct", "marketMin"]);
 
 document.addEventListener("input", (e) => {
   const el = e.target;
@@ -195,6 +225,7 @@ document.addEventListener("input", (e) => {
     }
     if (f === "eurUsd") c.eurUsdAuto = false;
     if (f === "name") renderCalcSelect();
+    if (f === "servicePackage") renderServiceText();
   } else if (el.classList.contains("c-label") || el.classList.contains("c-value")) {
     const id = el.closest("tr").dataset.id;
     const item = c.costs.find((x) => x.id === id);
@@ -313,6 +344,7 @@ $("#fileImport").onchange = async (e) => {
 };
 
 // ---------- старт ----------
+fillServiceSelect();
 importFromHash();
 renderAll();
 fetchRate(false);

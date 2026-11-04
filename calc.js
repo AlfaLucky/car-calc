@@ -1,3 +1,4 @@
+import { RU_UTIL_EV, RU_UTIL_ICE } from "./ru_util_table.js?v=9";
 // Чистая логика расчёта — по формулам Google-таблицы «Просчет машины»
 // (сборы аукциона обновлены до тарифов 2026, растаможка исправлена — см. ниже).
 
@@ -47,20 +48,27 @@ export function auctionFee(lot, platform, bidType = "pre") {
 }
 
 // ======================================================================
-// Растаможка и утильсбор по рынкам. Ставки 2026 года — по состоянию знаний
-// на середину 2026; места, где ставка может отличаться, помечены «ПРОВЕРИТЬ».
+// Растаможка и утильсбор по рынкам. Сверено с нормативными текстами 05.11.2026:
+//  ЕТТ — Решение Совета ЕЭК №107 (alta.ru/tamdoc/17sr0107);
+//  РФ: сбор за оформление — ПП №1637 в ред. №1638 (с 01.01.2026);
+//      утильсбор — ПП №1291 в ред. №1713 (с 01.12.2025);
+//  РБ: утильсбор — ПСМ №195 от 23.04.2026 (ред. №380); льгота 50% — Указ №140;
+//  Грузия: Налоговый кодекс, ст. 188, 194, 197, 199 (ред. закона N1477 от 02.04.2026).
+// Пометка [вторичный] — источник не официальный, сверить перед сделкой.
 // ======================================================================
 
 const num = (x) => (Number.isFinite(+x) ? +x : 0);
 const usd = (v) => "$" + Math.round(v).toLocaleString("ru-RU");
+const rub = (v) => Math.round(v).toLocaleString("ru-RU") + " ₽";
+const HP_TO_KW = 0.73549875;
+// Год платежа → колонка таблиц утильсбора РФ (2026…2030+).
+const utilYear = () => String(Math.min(2030, Math.max(2026, new Date().getFullYear())));
 
-// --- ЕТТ ЕАЭС для физлиц (одинаково для РБ и РФ) ---
-// Младше 3 лет: % от стоимости в €, но не меньше X € за см³.
+// --- ЕТТ ЕАЭС для физлиц (РБ и РФ, кроме чистых электромобилей) ---
 const UNDER3 = [
   [8500, 0.54, 2.5], [16700, 0.48, 3.5], [42300, 0.48, 5.5],
   [84500, 0.48, 7.5], [169000, 0.48, 15], [Infinity, 0.48, 20],
 ];
-// 3–5 лет и старше 5 лет: € за см³ по объёму.
 const PER_CC = [
   [1000, 1.5, 3], [1500, 1.7, 3.2], [1800, 2.5, 3.5],
   [2300, 2.7, 4.8], [3000, 3, 5], [Infinity, 3.6, 5.7],
@@ -76,90 +84,115 @@ function ettEur({ age, cc, priceEur }) {
 }
 
 // --- РФ ---
-// Таможенный сбор за оформление, ₽, по таможенной стоимости в ₽ (ПРОВЕРИТЬ индексацию 2026).
 const RU_CLEARANCE = [
-  [200000, 1067], [450000, 2134], [1200000, 4269], [2700000, 11746],
-  [4200000, 16524], [5500000, 21344], [7000000, 27540], [Infinity, 30000],
+  [200000, 1231], [450000, 2462], [1200000, 4924], [2700000, 13541],
+  [4200000, 18465], [5500000, 21344], [10000000, 49240], [Infinity, 73860],
 ];
-// Акциз на электромобили, ₽ за л.с. (ПРОВЕРИТЬ ставку 2026).
-const RU_EV_EXCISE = [[90, 0], [150, 63], [200, 608], [300, 993], [400, 1694], [500, 1755], [Infinity, 1811]];
-const RU_VAT = 0.22; // НДС в РФ с 01.01.2026
+// Акциз на электромобили 2026, ₽ за л.с. (на всю мощность) [вторичный].
+const RU_EV_EXCISE = [[90, 0], [150, 64], [200, 613], [300, 1004], [400, 1711], [500, 1771], [Infinity, 1829]];
+const RU_VAT = 0.22; // с 01.01.2026
 const RU_UTIL_BASE = 20000;
-// Утильсбор «коммерческий» (перепродажа, юрлица, а также физлица при > 160 л.с.):
-// коэффициенты × 20 000 ₽, [до 3 лет, старше 3 лет] (ПРОВЕРИТЬ индексацию 2026 и шкалу по мощности).
-const RU_UTIL_COMMERCIAL = [
-  [1000, 9.01, 23.0], [2000, 33.37, 58.7], [3000, 93.77, 141.97],
-  [3500, 107.67, 165.84], [Infinity, 137.11, 180.24],
-];
-const RU_UTIL_EV_COMMERCIAL = [33.37, 58.7];
+const RU_PERSONAL = [0.17, 0.26]; // 3 400 / 5 200 ₽
 
-function ruUtil(s, rub) {
+function ruUtil(s) {
   const age = num(s.age), cc = num(s.engineCc), hp = num(s.powerHp);
+  const kw = hp * HP_TO_KW;
   const ev = s.fuel === "electric";
-  const old = age >= 3;
-  const personalOk = s.ruImporter === "personal" && hp > 0 && hp <= 160 && (ev || cc <= 3000);
-  if (personalOk) {
-    const k = old ? 0.26 : 0.17;
-    return { rub: RU_UTIL_BASE * k, note: `льготный для физлица (≤160 л.с.): ${(RU_UTIL_BASE * k).toLocaleString("ru-RU")} ₽` };
+  const idx = age < 3 ? 0 : 1;
+  const personal = s.ruImporter === "personal";
+  const y = utilYear();
+  const fee = (k) => RU_UTIL_BASE * k;
+
+  if (!hp) return { rub: fee(RU_PERSONAL[idx]), note: "укажите мощность — пока посчитан льготный" };
+
+  if (ev) {
+    if (personal && kw <= 58.84) return { rub: fee(RU_PERSONAL[idx]), note: `льготный (электро ≤ 80 л.с.): ${rub(fee(RU_PERSONAL[idx]))}` };
+    const k = RU_UTIL_EV.find(([max]) => kw <= max)[1][y][idx];
+    return { rub: fee(k), note: `электро ${hp} л.с., коэф. ${k}: ${rub(fee(k))}` };
   }
-  const k = ev ? RU_UTIL_EV_COMMERCIAL[old ? 1 : 0]
-    : RU_UTIL_COMMERCIAL.find(([max]) => cc <= max)[old ? 2 : 1];
-  const why = s.ruImporter !== "personal" ? "для перепродажи" : hp > 160 ? "мощность > 160 л.с." : !hp ? "не указана мощность" : "объём > 3000 см³";
-  return { rub: RU_UTIL_BASE * k, note: `коммерческий (${why}): ${Math.round(RU_UTIL_BASE * k).toLocaleString("ru-RU")} ₽` };
+  if (personal && kw <= 117.68 && cc <= 3000) {
+    return { rub: fee(RU_PERSONAL[idx]), note: `льготный для физлица (≤ 160 л.с., ≤ 3000 см³): ${rub(fee(RU_PERSONAL[idx]))}` };
+  }
+  const table = RU_UTIL_ICE.find(([max]) => cc <= max)[1];
+  const k = table.find(([max]) => kw <= max)[1][y][idx];
+  const why = !personal ? "для перепродажи" : hp > 160 ? "> 160 л.с." : "> 3000 см³";
+  return { rub: fee(k), note: `по шкале ${y} г. (${why}), коэф. ${k}: ${rub(fee(k))}` };
 }
 
 function ruCustoms(s) {
   const eurUsd = num(s.eurUsd) || 1, usdRub = num(s.usdRub) || 1;
   const valueUsd = num(s.lotPrice);
-  const valueRub = valueUsd * usdRub;
-  const clearanceRub = RU_CLEARANCE.find(([max]) => valueRub <= max)[1];
+  const clearanceRub = RU_CLEARANCE.find(([max]) => valueUsd * usdRub <= max)[1];
+  const clearance = clearanceRub / usdRub;
   if (s.fuel === "electric") {
     const hp = num(s.powerHp);
     const duty = valueUsd * 0.15;
     const exciseRub = hp * RU_EV_EXCISE.find(([max]) => hp <= max)[1];
     const excise = exciseRub / usdRub;
     const vat = (valueUsd + duty + excise) * RU_VAT;
-    const total = duty + excise + vat + clearanceRub / usdRub;
-    return { amount: total, note: `электро: пошлина 15% ${usd(duty)} + акциз ${usd(excise)} + НДС 22% ${usd(vat)} + сбор ${clearanceRub.toLocaleString("ru-RU")} ₽` };
+    return {
+      amount: duty + excise + vat + clearance,
+      note: `электро: пошлина 15% ${usd(duty)} + акциз ${rub(exciseRub)} + НДС 22% ${usd(vat)} + сбор ${rub(clearanceRub)}`,
+    };
   }
   const eur = ettEur({ age: num(s.age), cc: num(s.engineCc), priceEur: valueUsd / eurUsd });
-  const duty = eur * eurUsd;
-  return { amount: duty + clearanceRub / usdRub, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € + сбор за оформление ${clearanceRub.toLocaleString("ru-RU")} ₽` };
+  return { amount: eur * eurUsd + clearance, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € + сбор за оформление ${rub(clearanceRub)}` };
 }
 
 // --- РБ ---
-const BY_UTIL_USD = 430; // сумма из исходной таблицы
+const BY_UTIL_BYN = [624.92, 1282.02]; // до 3 лет / старше 3 лет, физлицо, любой тип двигателя
 
 function byCustoms(s) {
   const eurUsd = num(s.eurUsd) || 1;
   const k = s.benefit === "Льготник" ? 0.5 : 1;
+  const disc = k < 1 ? ", −50% льготник" : "";
   if (s.fuel === "electric") {
-    return { amount: 0, note: "электро: льгота РБ — без пошлины (ПРОВЕРИТЬ, действует ли в 2026)", warn: "Для электромобиля в РБ растаможка взята как 0 по льготе на электромобили — проверьте, что льгота действует на дату ввоза." };
+    // Квота 0% пошлины для физлиц на 2026 исчерпана → 15%. НДС: освобождение, если ≤ 5 лет.
+    const value = num(s.lotPrice);
+    const duty = value * 0.15;
+    const vat = num(s.age) <= 5 ? 0 : (value + duty) * 0.2;
+    return {
+      amount: (duty + vat) * k,
+      note: `электро: пошлина 15% ${usd(duty)}${vat ? ` + НДС 20% ${usd(vat)}` : ", без НДС (≤ 5 лет)"}${disc}`,
+      warn: "РБ, электро: квота на ввоз без пошлины для физлиц в 2026 исчерпана — посчитано 15%. Если квота откроется, пошлина будет 0.",
+    };
   }
   const eur = ettEur({ age: num(s.age), cc: num(s.engineCc), priceEur: num(s.lotPrice) / eurUsd });
-  return { amount: eur * eurUsd * k, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € → $ по курсу${k < 1 ? ", −50% льготник" : ""}` };
+  return { amount: eur * eurUsd * k, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € → $ по курсу${disc}` };
+}
+
+function byUtil(s) {
+  const usdByn = num(s.usdByn) || 1;
+  const byn = BY_UTIL_BYN[num(s.age) < 3 ? 0 : 1];
+  return { amount: byn / usdByn, note: `${byn.toLocaleString("ru-RU")} BYN (ПСМ №195)` };
 }
 
 // --- Грузия ---
-// Акциз: GEL за см³ по возрасту (ПРОВЕРИТЬ по Налоговому кодексу Грузии, ст. 188).
-const GE_EXCISE_PER_CC = [
-  [1, 1.5], [2, 1.4], [3, 1.4], [4, 1.2], [5, 1.0], [6, 0.95], [7, 1.1],
-  [8, 1.25], [9, 1.35], [10, 1.5], [11, 1.6], [12, 1.7], [13, 1.8], [14, 1.9], [Infinity, 2.5],
-];
-const GE_DECLARATION_GEL = 150; // оформление декларации/таможенные услуги (ПРОВЕРИТЬ)
+const GE_FEES_GEL = 480; // таможня 150 + декларация 50 + экспертиза 30 + регистрация и номера 200 + транзит 50 [вторичный]
+
+// Возраст по-грузински: год оформления − год выпуска.
+function geAge(s) {
+  const d = s.prodDate ? new Date(s.prodDate) : null;
+  return d && !isNaN(d) ? new Date().getFullYear() - d.getFullYear() : num(s.age);
+}
 
 function geCustoms(s) {
   const usdGel = num(s.usdGel) || 1;
+  const cc = num(s.engineCc);
+  const age = geAge(s);
   if (s.fuel === "electric") {
-    return { amount: GE_DECLARATION_GEL / usdGel, note: `электро: без акциза, только оформление ${GE_DECLARATION_GEL} GEL` };
+    return { amount: GE_FEES_GEL / usdGel, note: `электро: без акциза и импортного налога, сборы ≈ ${GE_FEES_GEL} GEL` };
   }
-  const age = num(s.age), cc = num(s.engineCc);
-  const rate = GE_EXCISE_PER_CC.find(([max]) => age < max)[1];
-  let gel = cc * rate;
-  let extra = "";
-  if (s.fuel === "hybrid") { gel *= 0.4; extra = ", гибрид −60%"; }
-  const amount = (gel + GE_DECLARATION_GEL) / usdGel;
-  return { amount, note: `акциз ${cc} см³ × ${rate} GEL${extra} = ${Math.round(gel).toLocaleString("ru-RU")} GEL + оформление ${GE_DECLARATION_GEL} GEL` };
+  let rate = age <= 6 ? 1.5 : 4.5;
+  let hyb = "";
+  if (s.fuel === "hybrid" && age <= 6) { rate = 0.6; hyb = " (гибрид −60%)"; }
+  const excise = cc * rate;
+  const importTax = 0.05 * cc * (1 + 0.05 * age);
+  const gel = excise + importTax + GE_FEES_GEL;
+  return {
+    amount: gel / usdGel,
+    note: `акциз ${cc} см³ × ${rate} GEL${hyb} = ${Math.round(excise)} + импортный налог ${Math.round(importTax)} + сборы ≈ ${GE_FEES_GEL} GEL (возраст ${age})`,
+  };
 }
 
 function customs(s) {
@@ -170,11 +203,11 @@ function customs(s) {
 
 function util(s) {
   if (s.market === "ru") {
-    const r = ruUtil(s, num(s.usdRub) || 1);
+    const r = ruUtil(s);
     return { amount: r.rub / (num(s.usdRub) || 1), note: r.note };
   }
   if (s.market === "ge") return { amount: 0, note: "в Грузии не платится" };
-  return { amount: BY_UTIL_USD, note: "сумма из таблицы" };
+  return byUtil(s);
 }
 
 // Совместимость: растаможка РБ как раньше.
@@ -216,7 +249,8 @@ export function compute(s) {
     return { ...c, amount: d.amount, note: d.note };
   });
   if (s.market === "ru" && !num(s.powerHp)) warnings.push("Для РФ укажите мощность в л.с. — от неё зависит утильсбор.");
-  if (s.market === "ru" && s.fuel === "hybrid") warnings.push("Гибрид в РФ посчитан как бензиновый по объёму двигателя.");
+  if (s.market === "ru" && s.fuel === "hybrid") warnings.push("Гибрид в РФ: пошлина по объёму двигателя; для утильсбора укажите суммарную мощность ДВС + электромотора.");
+  if (s.market === "ru" && s.fuel === "electric") warnings.push("Электро в РФ: укажите 30-минутную мощность электромотора в л.с.");
   const otherCosts = rows.reduce((a, r) => a + r.amount, 0); // всё, кроме самого лота
   const total = lot + otherCosts;
   const pct = num(s.markupPct) / 100;

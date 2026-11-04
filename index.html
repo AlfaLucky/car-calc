@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Просчёт машины</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header class="topbar">
@@ -56,7 +56,7 @@
             <select data-field="fuel"></select></label>
           <label><span>Объём двигателя, см³</span>
             <input data-field="engineCc" type="number" min="0" step="1" inputmode="numeric"></label>
-          <label data-markets="ru"><span>Мощность, л.с.</span>
+          <label data-markets="ru"><span>Мощность, л.с. <small>(гибрид — ДВС + электро)</small></span>
             <input data-field="powerHp" type="number" min="0" step="1" inputmode="numeric"></label>
           <label data-markets="ru"><span>Ввоз в РФ</span>
             <select data-field="ruImporter"><option value="personal">Физлицо для себя</option><option value="commercial">Для перепродажи / юрлицо</option></select></label>
@@ -81,6 +81,8 @@
               <input data-field="usdRub" type="number" min="0" step="0.01" inputmode="decimal">
               <button id="btnFx" type="button" title="Обновить курсы">↻</button>
             </span></label>
+          <label data-markets="by"><span>Курс USD → BYN</span>
+            <input data-field="usdByn" type="number" min="0" step="0.0001" inputmode="decimal"></label>
           <label data-markets="ge"><span>Курс USD → GEL</span>
             <input data-field="usdGel" type="number" min="0" step="0.001" inputmode="decimal"></label>
         </div>
@@ -136,6 +138,6 @@
   <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=8"></script>
+  <script type="module" src="app.js?v=9"></script>
 </body>
 </html>

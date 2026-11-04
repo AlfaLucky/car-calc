@@ -89,6 +89,7 @@ export function defaultCalc() {
     eurUsdAuto: true,
     usdRub: 81,
     usdGel: 2.7,
+    usdByn: 2.95,
     fxAuto: true,
     prodDate: "2017-09-01",
     age: 4,

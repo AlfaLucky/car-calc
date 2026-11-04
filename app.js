@@ -1,8 +1,8 @@
-import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=8";
+import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=9";
 import {
   defaultCalc, defaultCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS, FUELS,
   MANUAL_DEFAULTS, PER_MARKET_FIELDS,
-} from "./defaults.js?v=8";
+} from "./defaults.js?v=9";
 
 const STORE_KEY = "carcalc.v1";
 const $ = (sel) => document.querySelector(sel);
@@ -290,9 +290,9 @@ async function fetchRates(manual) {
     const res = await fetch("https://open.er-api.com/v6/latest/USD");
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
-    const { RUB, GEL } = data?.rates || {};
-    if (!RUB || !GEL) throw new Error("no rate");
-    if (manual || c.fxAuto !== false) { c.usdRub = RUB; c.usdGel = GEL; c.fxAuto = true; }
+    const { RUB, GEL, BYN } = data?.rates || {};
+    if (!RUB || !GEL || !BYN) throw new Error("no rate");
+    if (manual || c.fxAuto !== false) { c.usdRub = RUB; c.usdGel = GEL; c.usdByn = BYN; c.fxAuto = true; }
     $("#fxInfo").textContent = `(${new Date(data.time_last_update_unix * 1000).toLocaleDateString("ru-RU")})`;
     ok++;
   } catch {
@@ -306,7 +306,7 @@ async function fetchRates(manual) {
 
 // ---------- события ----------
 const NUMERIC = new Set(["repairCost", "shippingPoti", "servicePackage", "lotPrice", "engineCc", "powerHp", "age",
-  "eurUsd", "usdRub", "usdGel", "markupPct", "marketMin"]);
+  "eurUsd", "usdRub", "usdGel", "usdByn", "markupPct", "marketMin"]);
 
 document.addEventListener("input", (e) => {
   const el = e.target;
@@ -320,7 +320,7 @@ document.addEventListener("input", (e) => {
       $('[data-field="age"]').value = c.age;
     }
     if (f === "eurUsd") c.eurUsdAuto = false;
-    if (f === "usdRub" || f === "usdGel") c.fxAuto = false;
+    if (f === "usdRub" || f === "usdGel" || f === "usdByn") c.fxAuto = false;
     if (f === "name") renderCalcSelect();
     if (f === "servicePackage") renderServiceText();
   } else if (el.classList.contains("c-label") || el.classList.contains("c-value")) {
@@ -388,7 +388,7 @@ $("#btnNew").onclick = () => {
   const c = defaultCalc();
   c.name = "Расчёт " + (Object.keys(db.calcs).length + 1);
   c.market = prev.market;
-  Object.assign(c, { eurUsd: prev.eurUsd, usdRub: prev.usdRub, usdGel: prev.usdGel });
+  Object.assign(c, { eurUsd: prev.eurUsd, usdRub: prev.usdRub, usdGel: prev.usdGel, usdByn: prev.usdByn });
   c.prodDate = "";
   c.age = 0;
   db.calcs[id] = c;

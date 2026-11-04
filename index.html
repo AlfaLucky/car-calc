@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Просчёт машины</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+  <link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>Просчёт машины</h1>
+      <div class="calc-switch">
+        <select id="calcSelect" aria-label="Сохранённые расчёты"></select>
+        <button id="btnNew" type="button">+ Новый</button>
+        <button id="btnDup" type="button">Копия</button>
+        <button id="btnDel" type="button" class="danger">Удалить</button>
+      </div>
+      <div class="tools">
+        <button id="btnShare" type="button">Ссылка</button>
+        <button id="btnExport" type="button">Экспорт</button>
+        <label class="btn">Импорт<input id="fileImport" type="file" accept="application/json" hidden></label>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="col-main">
+      <section class="card">
+        <label class="name-field">
+          <span>Название расчёта</span>
+          <input data-field="name" type="text" placeholder="Например: BMW X5 2019, лот 12345678">
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>Параметры автомобиля</h2>
+        <div class="grid">
+          <label><span>Цена выигранного лота, $</span>
+            <input data-field="lotPrice" type="number" min="0" step="50" inputmode="decimal"></label>
+          <label><span>Площадка</span>
+            <select data-field="platform"><option>Copart</option><option>IAAI</option></select></label>
+          <label><span>Объём двигателя, см³</span>
+            <input data-field="engineCc" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label><span>Дата производства</span>
+            <input data-field="prodDate" type="date"></label>
+          <label><span>Возраст автомобиля, лет <small>(считается от даты, можно поправить)</small></span>
+            <input data-field="age" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label><span>Растаможка</span>
+            <select data-field="benefit"><option>Льготник</option><option>Обычный</option></select></label>
+          <label><span>Курс EUR → USD <small id="rateInfo"></small></span>
+            <span class="with-btn">
+              <input data-field="eurUsd" type="number" min="0" step="0.0001" inputmode="decimal">
+              <button id="btnRate" type="button" title="Обновить курс">↻</button>
+            </span></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Затраты</h2>
+          <button id="btnAddCost" type="button">+ Добавить строку</button>
+        </div>
+        <table class="costs">
+          <thead><tr><th>Наименование</th><th class="num">Сумма, $</th><th></th></tr></thead>
+          <tbody id="costRows"></tbody>
+          <tfoot>
+            <tr><td>Выигранный лот</td><td class="num" id="lotOut"></td><td></td></tr>
+            <tr class="sum"><td>Себестоимость машины в РБ</td><td class="num" id="totalOut"></td><td></td></tr>
+          </tfoot>
+        </table>
+        <button id="btnResetCosts" type="button" class="link">Вернуть список затрат по умолчанию</button>
+      </section>
+
+      <section class="card">
+        <h2>Заметки</h2>
+        <textarea data-field="notes" rows="3" placeholder="Ссылка на лот, VIN, комментарии…"></textarea>
+      </section>
+    </div>
+
+    <aside class="col-side">
+      <section class="card result">
+        <h2>Итог</h2>
+        <dl>
+          <dt>Себестоимость в РБ</dt><dd id="rTotal"></dd>
+          <dt class="inline-input">Наценка
+            <span class="pct"><input data-field="markupPct" type="number" min="0" step="1" inputmode="decimal">%</span></dt>
+          <dd id="rMarkup"></dd>
+          <dt class="big">Итоговая цена с учётом прибыли</dt><dd class="big" id="rFinal"></dd>
+        </dl>
+        <hr>
+        <label><span>Минимальная цена на рынке РБ, $</span>
+          <input data-field="marketMin" type="number" min="0" step="100" inputmode="decimal"></label>
+        <dl>
+          <dt>Разница с рынком (без наценки)</dt><dd id="rMargin"></dd>
+          <dt>Максимальная цена ставки <small>(формула таблицы)</small></dt><dd id="rMaxBid"></dd>
+          <dt>Ставка, при которой цена с наценкой = рынку</dt><dd id="rBreakEven"></dd>
+        </dl>
+        <p class="status" id="saveStatus"></p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js?v=3"></script>
+</body>
+</html>

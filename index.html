@@ -62,8 +62,11 @@
             <select data-field="ruImporter"><option value="personal">Физлицо для себя</option><option value="commercial">Для перепродажи / юрлицо</option></select></label>
           <label><span>Дата производства</span>
             <input data-field="prodDate" type="date"></label>
-          <label><span>Возраст автомобиля, лет <small>(считается от даты, можно поправить)</small></span>
-            <input data-field="age" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label><span>Возраст автомобиля, лет <small>(ручной ввод заменяет расчёт по дате)</small></span>
+            <input data-field="age" type="number" min="0" step="any" inputmode="decimal"></label>
+          <label id="byCustomsValueField" hidden><span>Таможенная стоимость, $</span>
+            <input data-field="byCustomsValueUsd" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="По умолчанию — цена лота">
+            <small class="hint">Укажите стоимость по документам, если она отличается от цены лота.</small></label>
           <label data-markets="by" data-fuels="electric"><span>Пошлина на электро в РБ</span>
             <select data-field="byEvDuty"><option value="0">0% — льгота для электромобилей</option><option value="15">15% — если льгота не действует</option></select></label>
           <label data-markets="by"><span>Растаможка</span>
@@ -140,6 +143,6 @@
   <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=11"></script>
+  <script type="module" src="app.js?v=12"></script>
 </body>
 </html>

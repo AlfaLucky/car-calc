@@ -1,4 +1,4 @@
-import { compute, carAge, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=11";
+import { compute, carAge, byCarAgeGroup, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=12";
 import {
   defaultCalc as baseCalc, defaultCosts as baseCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS,
   FUELS as CAR_FUELS, FUELS_MOTO, manualDefaultsFor, PER_MARKET_FIELDS,
@@ -85,6 +85,7 @@ function normalize(c) {
   const base = defaultCalc();
   const out = { ...base, ...c };
   out.vehicle = VEHICLE;
+  if (VEHICLE === "car" && !Object.hasOwn(c, "prodDate") && Object.hasOwn(c, "age")) out.prodDate = "";
   if (!MARKETS[out.market]) out.market = "by";
   if (!FUELS[out.fuel]) out.fuel = "petrol";
   if (!Array.isArray(out.costs)) out.costs = base.costs;
@@ -158,6 +159,13 @@ function renderCalcSelect() {
   }
 }
 
+function renderByCustomsValue() {
+  const field = $("#byCustomsValueField");
+  if (!field) return;
+  const c = cur();
+  field.hidden = c.market !== "by" || c.fuel === "electric" || byCarAgeGroup(c) !== 0;
+}
+
 function renderMarket() {
   const m = cur().market;
   $$(".market-switch button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.market === m)));
@@ -167,6 +175,7 @@ function renderMarket() {
     const okF = !el.dataset.fuels || el.dataset.fuels.split(" ").includes(fuel);
     el.hidden = !(okM && okF);
   });
+  renderByCustomsValue();
   $$(".mk").forEach((el) => { el.textContent = MARKETS[m].short; });
   // Мощность нужна только РФ, но показываем и для электро/гибрида как справку — достаточно РФ.
 }
@@ -196,7 +205,9 @@ function renderFields() {
   const c = cur();
   $$("[data-field]").forEach((el) => {
     if (el.id === "serviceSelect") return;
-    const v = getField(c, el.dataset.field);
+    const f = el.dataset.field;
+    const ageFromDate = f === "age" && VEHICLE === "car" && c.market === "by" && c.prodDate && !c.byManualAge;
+    const v = ageFromDate ? carAge(c.prodDate) : getField(c, f);
     el.value = v ?? "";
   });
   fillServiceSelect();
@@ -318,7 +329,7 @@ async function fetchRates(manual) {
 
 // ---------- события ----------
 const NUMERIC = new Set(["repairCost", "shippingPoti", "servicePackage", "lotPrice", "engineCc", "powerHp", "age",
-  "eurUsd", "usdRub", "usdGel", "usdByn", "markupPct", "marketMin"]);
+  "eurUsd", "usdRub", "usdGel", "usdByn", "markupPct", "marketMin", "byCustomsValueUsd"]);
 
 document.addEventListener("input", (e) => {
   const el = e.target;
@@ -328,8 +339,14 @@ document.addEventListener("input", (e) => {
     const f = el.dataset.field;
     setField(c, f, NUMERIC.has(f) ? (el.value === "" ? "" : +el.value) : el.value);
     if (f === "prodDate") {
+      delete c.byManualAge;
       c.age = carAge(c.prodDate);
       $('[data-field="age"]').value = c.age;
+      renderByCustomsValue();
+    }
+    if (f === "age" && VEHICLE === "car") {
+      c.byManualAge = el.value !== "";
+      renderByCustomsValue();
     }
     if (f === "eurUsd") c.eurUsdAuto = false;
     if (f === "usdRub" || f === "usdGel" || f === "usdByn") c.fxAuto = false;

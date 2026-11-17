@@ -74,13 +74,13 @@ const PER_CC = [
   [2300, 2.7, 4.8], [3000, 3, 5], [Infinity, 3.6, 5.7],
 ];
 
-function ettEur({ age, cc, priceEur }) {
-  if (age < 3) {
+function ettQuote({ ageGroup, cc, priceEur }) {
+  if (ageGroup === 0) {
     const [, pct, perCc] = UNDER3.find(([max]) => priceEur <= max);
-    return Math.max(priceEur * pct, cc * perCc);
+    return { eur: Math.max(priceEur * pct, cc * perCc), pct, perCc };
   }
-  const [, r35, r5] = PER_CC.find(([max]) => cc <= max);
-  return cc * (age <= 5 ? r35 : r5);
+  const rate = PER_CC.find(([max]) => cc <= max)[ageGroup];
+  return { eur: cc * rate };
 }
 
 // --- РФ ---
@@ -135,12 +135,27 @@ function ruCustoms(s) {
       note: `электро: пошлина 15% ${usd(duty)} + акциз ${rub(exciseRub)} + НДС 22% ${usd(vat)} + сбор ${rub(clearanceRub)}`,
     };
   }
-  const eur = ettEur({ age: num(s.age), cc: num(s.engineCc), priceEur: valueUsd / eurUsd });
+  const age = num(s.age);
+  const ageGroup = age < 3 ? 0 : age <= 5 ? 1 : 2;
+  const { eur } = ettQuote({ ageGroup, cc: num(s.engineCc), priceEur: valueUsd / eurUsd });
   return { amount: eur * eurUsd + clearance, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € + сбор за оформление ${rub(clearanceRub)}` };
 }
 
 // --- РБ ---
-const BY_UTIL_BYN = [624.92, 1282.02]; // до 3 лет / старше 3 лет, физлицо, любой тип двигателя
+const BY_UTIL_BYN = [624.92, 1282.02]; // не старше 3 лет / старше 3 лет, физлицо
+const formatEur = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format;
+
+// Решение Совета ЕЭК №107, приложение 2, таблица 2: день годовщины включается.
+export function byCarAgeGroup(s, today = new Date()) {
+  const dateAge = s.byManualAge ? null : ageFromDate(s.prodDate, today);
+  if (!dateAge) {
+    const age = num(s.age);
+    return age <= 3 ? 0 : age <= 5 ? 1 : 2;
+  }
+  const { years, anniversaryDifference } = dateAge;
+  if (years < 3 || (years === 3 && anniversaryDifference <= 0)) return 0;
+  return years < 5 || (years === 5 && anniversaryDifference <= 0) ? 1 : 2;
+}
 
 function byCustoms(s) {
   const eurUsd = num(s.eurUsd) || 1;
@@ -158,13 +173,25 @@ function byCustoms(s) {
       note: `электро: пошлина ${zero ? "0% (льгота)" : "15% " + usd(duty)}${vat ? ` + НДС 20% ${usd(vat)}` : ", без НДС (≤ 5 лет)"}${disc}`,
     };
   }
-  const eur = ettEur({ age: num(s.age), cc: num(s.engineCc), priceEur: num(s.lotPrice) / eurUsd });
-  return { amount: eur * eurUsd * k, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € → $ по курсу${disc}` };
+  const ageGroup = byCarAgeGroup(s);
+  const cc = num(s.engineCc);
+  const customsValue = num(s.byCustomsValueUsd);
+  const priceEur = (customsValue > 0 ? customsValue : num(s.lotPrice)) / eurUsd;
+  const { eur, pct, perCc } = ettQuote({ ageGroup, cc, priceEur });
+  const amount = eur * eurUsd * k;
+  if (ageGroup === 0) {
+    const base = customsValue > 0 ? "таможенная стоимость" : "цена лота";
+    return {
+      amount,
+      note: `${base} ${formatEur(priceEur)} € · макс. из ${formatEur(pct * 100)}% от стоимости (${formatEur(priceEur * pct)} €) и ${formatEur(perCc)} €/см³ (${formatEur(cc * perCc)} €) = ${formatEur(eur)} €${disc}`,
+    };
+  }
+  return { amount, note: `ЕТТ ${Math.round(eur).toLocaleString("ru-RU")} € → $ по курсу${disc}` };
 }
 
 function byUtil(s) {
   const usdByn = num(s.usdByn) || 1;
-  const byn = BY_UTIL_BYN[num(s.age) < 3 ? 0 : 1];
+  const byn = BY_UTIL_BYN[byCarAgeGroup(s) === 0 ? 0 : 1];
   return { amount: byn / usdByn, note: `${byn.toLocaleString("ru-RU")} BYN (ПСМ №195)` };
 }
 
@@ -285,18 +312,27 @@ function util(s) {
 }
 
 // Совместимость: растаможка РБ как раньше.
-export function customsDuty({ age, engineCc, eurUsd, benefit, lotPrice }) {
-  return byCustoms({ age, engineCc, eurUsd, benefit, lotPrice, fuel: "petrol" }).amount;
+export function customsDuty(s) {
+  return byCustoms({ ...s, fuel: "petrol" }).amount;
+}
+
+function ageFromDate(prodDate, today) {
+  if (!prodDate) return null;
+  const d = new Date(`${prodDate}T00:00:00`);
+  if (isNaN(d)) return null;
+
+  const year = today.getFullYear();
+  const month = d.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const anniversaryDay = Math.min(d.getDate(), lastDay);
+  const anniversaryDifference = today.getMonth() - month || today.getDate() - anniversaryDay;
+  return { years: year - d.getFullYear(), anniversaryDifference };
 }
 
 export function carAge(prodDate, today = new Date()) {
-  if (!prodDate) return 0;
-  const d = new Date(prodDate);
-  if (isNaN(d)) return 0;
-  let age = today.getFullYear() - d.getFullYear();
-  const m = today.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
-  return Math.max(0, age);
+  const dateAge = ageFromDate(prodDate, today);
+  if (!dateAge) return 0;
+  return Math.max(0, dateAge.years - (dateAge.anniversaryDifference < 0 ? 1 : 0));
 }
 
 // Сумма строки затрат (+ пояснение для автоматических строк).

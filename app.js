@@ -1,8 +1,8 @@
-import { compute, carAge, byCarAgeGroup, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=12";
+import { compute, carAge, byCarAgeGroup, costsForMarket, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=13";
 import {
   defaultCalc as baseCalc, defaultCosts as baseCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS,
-  FUELS as CAR_FUELS, FUELS_MOTO, manualDefaultsFor, PER_MARKET_FIELDS,
-} from "./defaults.js?v=11";
+  FUELS as CAR_FUELS, FUELS_MOTO, manualDefaultsFor, PER_MARKET_FIELDS, DIRECT_COSTS, DIRECT_MANUAL_DEFAULTS,
+} from "./defaults.js?v=13";
 
 // Страница машин (index.html) или мотоциклов (moto.html): у каждой свой список расчётов.
 const VEHICLE = document.body.dataset.vehicle === "moto" ? "moto" : "car";
@@ -87,9 +87,14 @@ function normalize(c) {
   out.vehicle = VEHICLE;
   if (VEHICLE === "car" && !Object.hasOwn(c, "prodDate") && Object.hasOwn(c, "age")) out.prodDate = "";
   if (!MARKETS[out.market]) out.market = "by";
+  if (VEHICLE === "moto" && out.market === "by_direct") out.market = "by";
   if (!FUELS[out.fuel]) out.fuel = "petrol";
   if (!Array.isArray(out.costs)) out.costs = base.costs;
   out.costs = out.costs.map((x) => ({ id: x.id || uid(), label: String(x.label ?? ""), kind: x.kind, values: x.values, value: x.value }));
+  if (VEHICLE === "car") {
+    const missing = DIRECT_COSTS.filter((row) => !out.costs.some((x) => x.kind === row.kind));
+    out.costs.splice(out.costs.findIndex((x) => x.kind === "auction") + 1, 0, ...missing.map((row) => ({ ...row })));
+  }
 
   // Поля, ставшие отдельными, — из старых ручных строк.
   const lift = (kind, label, test, field, fallbackAt) => {
@@ -121,6 +126,7 @@ function normalize(c) {
       const d = MANUAL_DEFAULTS[x.id];
       x.values = { by: v, ru: d ? d.ru : v, ge: d ? d.ge : v };
     }
+    if (x.values.by_direct === undefined) x.values.by_direct = DIRECT_MANUAL_DEFAULTS[x.id] || 0;
     for (const m of MARKET_IDS) if (x.values[m] === undefined) x.values[m] = 0;
     delete x.value;
   }
@@ -128,6 +134,9 @@ function normalize(c) {
   // Поля «по рынкам».
   const pm = defaultPerMarket(VEHICLE);
   out.perMarket = out.perMarket || {};
+  if (!out.perMarket.by_direct) {
+    out.perMarket.by_direct = { ...pm.by_direct, marketMin: out.perMarket.by?.marketMin ?? pm.by_direct.marketMin };
+  }
   for (const m of MARKET_IDS) out.perMarket[m] = { ...pm[m], ...(out.perMarket[m] || {}) };
   if (!c.perMarket) {
     if (c.servicePackage !== undefined) out.perMarket.by.servicePackage = +c.servicePackage;
@@ -163,7 +172,7 @@ function renderByCustomsValue() {
   const field = $("#byCustomsValueField");
   if (!field) return;
   const c = cur();
-  field.hidden = c.market !== "by" || c.fuel === "electric" || byCarAgeGroup(c) !== 0;
+  field.hidden = !["by", "by_direct"].includes(c.market) || c.fuel === "electric" || byCarAgeGroup(c) !== 0;
 }
 
 function renderMarket() {
@@ -206,8 +215,12 @@ function renderFields() {
   $$("[data-field]").forEach((el) => {
     if (el.id === "serviceSelect") return;
     const f = el.dataset.field;
-    const ageFromDate = f === "age" && VEHICLE === "car" && c.market === "by" && c.prodDate && !c.byManualAge;
-    const v = ageFromDate ? carAge(c.prodDate) : getField(c, f);
+    const ageFromDate = f === "age" && VEHICLE === "car" && ["by", "by_direct"].includes(c.market) && c.prodDate && !c.byManualAge;
+    let v = ageFromDate ? carAge(c.prodDate) : getField(c, f);
+    if (f === "directPort") {
+      el.disabled = c.directDocuments === "export";
+      if (el.disabled) v = "NJ";
+    }
     el.value = v ?? "";
   });
   fillServiceSelect();
@@ -227,7 +240,7 @@ function renderCosts() {
   const c = cur();
   const tb = $("#costRows");
   tb.innerHTML = "";
-  for (const item of c.costs) {
+  for (const item of costsForMarket(c)) {
     const tr = document.createElement("tr");
     tr.dataset.id = item.id;
     if (item.kind) {
@@ -329,7 +342,7 @@ async function fetchRates(manual) {
 
 // ---------- события ----------
 const NUMERIC = new Set(["repairCost", "shippingPoti", "servicePackage", "lotPrice", "engineCc", "powerHp", "age",
-  "eurUsd", "usdRub", "usdGel", "usdByn", "markupPct", "marketMin", "byCustomsValueUsd"]);
+  "eurUsd", "usdRub", "usdGel", "usdByn", "markupPct", "marketMin", "byCustomsValueUsd", "directUsShipping"]);
 
 document.addEventListener("input", (e) => {
   const el = e.target;
@@ -353,6 +366,7 @@ document.addEventListener("input", (e) => {
     if (f === "name") renderCalcSelect();
     if (f === "fuel") renderMarket();
     if (f === "servicePackage") renderServiceText();
+    if (f === "directDocuments") renderFields();
   } else if (el.classList.contains("c-label") || el.classList.contains("c-value")) {
     const tr = el.closest("tr");
     const item = c.costs.find((x) => x.id === tr.dataset.id);
@@ -393,7 +407,7 @@ $("#btnAddCost").onclick = () => {
   const costs = cur().costs;
   const m = cur().market;
   // Новая строка платится только на текущем рынке; на других — 0, можно поправить.
-  const item = { id: uid(), label: "", values: { by: 0, ru: 0, ge: 0 } };
+  const item = { id: uid(), label: "", values: Object.fromEntries(MARKET_IDS.map((market) => [market, 0])) };
   item.values[m] = 0;
   const at = costs.findIndex((x) => x.kind === "repair");
   if (at >= 0) costs.splice(at, 0, item); else costs.push(item);

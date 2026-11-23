@@ -2,6 +2,7 @@
 
 export const MARKETS = {
   by: { label: "Беларусь", short: "РБ" },
+  by_direct: { label: "Беларусь напрямую", short: "РБ напрямую" },
   ru: { label: "Россия", short: "РФ" },
   ge: { label: "Грузия", short: "Грузии" },
 };
@@ -52,14 +53,29 @@ export const MOTO_MANUAL_DEFAULTS = {
 
 export const manualDefaultsFor = (vehicle) => (vehicle === "moto" ? MOTO_MANUAL_DEFAULTS : MANUAL_DEFAULTS);
 
+// Прямой маршрут сохраняет отдельные ручные расходы на оформление в Беларуси.
+// Это прежние оценки калькулятора, тарифы перевозчика считаются отдельно.
+export const DIRECT_MANUAL_DEFAULTS = { c2: 500, c11: 15, c15: 40, c16: 90, c17: 60 };
+export const DIRECT_COSTS = [
+  { id: "directUs", label: "Доставка по США до порта", kind: "directUs" },
+  { id: "directSea", label: "Море США → Клайпеда", kind: "directSea" },
+  { id: "directForwarding", label: "Экспедирование в Клайпеде", kind: "directForwarding" },
+  { id: "directTransport", label: "Автовоз Клайпеда → Беларусь", kind: "directTransport" },
+  { id: "directLoading", label: "Погрузка на автовоз", kind: "directLoading" },
+  { id: "directService", label: "Услуга перевозчика", kind: "directService" },
+  { id: "directEvLoading", label: "Погрузка электро / гибрида", kind: "directEvLoading" },
+  { id: "directDocuments", label: "Экспортные документы", kind: "directDocuments" },
+];
+
 export function defaultCosts(vehicle = "car") {
   const defs = manualDefaultsFor(vehicle);
   const manual = (id) => {
     const d = defs[id];
-    return d ? { id, label: d.label, values: { by: d.by, ru: d.ru, ge: d.ge } } : null;
+    return d ? { id, label: d.label, values: { by: d.by, ru: d.ru, ge: d.ge, by_direct: DIRECT_MANUAL_DEFAULTS[id] || 0 } } : null;
   };
   return [
     { id: "auction", label: "Сборы аукциона", kind: "auction" },
+    ...(vehicle === "car" ? DIRECT_COSTS.map((row) => ({ ...row })) : []),
     { id: "shipping", label: "Доставка до Поти", kind: "shipping" },
     manual("c2"), manual("c3"), manual("c4"), manual("c5"), manual("c6"), manual("c7"),
     manual("c8"), manual("c9"), manual("c10"), manual("c11"), manual("c12"), manual("c13"),
@@ -81,7 +97,7 @@ export const SERVICE_PACKAGES = [
     text: "Всё из пакета за $1000 + перегон до Минска, сопровождение на зоне растаможки, постановка машины на учёт." },
   { price: 500, markets: ["ge"], title: "Базовый (Грузия)",
     text: "Приёмка машины в Грузии, постановка на ремонт, дефектовка, поиск запчастей, помощь с растаможкой в Грузии." },
-  { price: 0, markets: ["by", "ru", "ge"], title: "Без пакета", text: "Услуги сопровождения не нужны." },
+  { price: 0, markets: ["by", "by_direct", "ru", "ge"], title: "Без пакета", text: "Услуги сопровождения не нужны." },
 ];
 
 // Поля, у которых на каждом рынке своё значение.
@@ -91,6 +107,7 @@ export function defaultPerMarket(vehicle = "car") {
   const price = vehicle === "moto" ? 16000 : 47000;
   return {
     by: { servicePackage: 2000, marketMin: price },
+    by_direct: { servicePackage: 0, marketMin: price },
     ru: { servicePackage: 1000, marketMin: price },
     ge: { servicePackage: 500, marketMin: price },
   };
@@ -137,6 +154,12 @@ export function defaultCalc(vehicle = "car") {
     benefit: "Льготник",
     ruImporter: "personal",
     shippingPoti: 2000,
+    directPort: "NJ",
+    directSize: "sedan",
+    directContainer: "4",
+    directDestination: "minsk",
+    directDocuments: "standard",
+    directUsShipping: "",
     repairCost: 3000,
     markupPct: 30,
     perMarket: defaultPerMarket("car"),

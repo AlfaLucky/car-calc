@@ -335,8 +335,52 @@ export function carAge(prodDate, today = new Date()) {
   return Math.max(0, dateAge.years - (dateAge.anniversaryDifference < 0 ? 1 : 0));
 }
 
+// Lion Trans, «Прайс Клайпеда», 29.09, стр. 1.
+// XL SUV: к тарифу седана добавляется $200.
+const KLAIPEDA_SEA_USD = {
+  NJ: { sedan: 750, suv: 850, xl: 950 },
+  GA: { sedan: 750, suv: 850, xl: 950 },
+  FL: { sedan: 825, suv: 925, xl: 1025 },
+  TX: { sedan: 900, suv: 1000, xl: 1100 },
+  CA: { sedan: 1250, suv: 1400, xl: 1450 },
+};
+const DIRECT_EXCLUDED = new Set(["shipping", "service", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c12", "c13"]);
+
+export function costsForMarket(s) {
+  return s.costs.filter((row) => {
+    if (row.kind?.startsWith("direct")) return s.market === "by_direct";
+    return s.market !== "by_direct" || !DIRECT_EXCLUDED.has(row.kind || row.id);
+  });
+}
+
+function directCost(kind, s) {
+  const eurUsd = num(s.eurUsd) || 1;
+  const euro = (amount, note) => ({ amount: amount * eurUsd, note: `${amount} € → $ по курсу${note || ""}` });
+  switch (kind) {
+    case "directUs": return {
+      amount: num(s.directUsShipping),
+      note: "сумма по предложению перевозчика",
+      warn: s.directUsShipping === "" || s.directUsShipping == null
+        ? "Укажите доставку по США до порта — эта сумма ещё не включена в итог." : undefined,
+    };
+    case "directSea": {
+      const port = s.directDocuments === "export" ? "NJ" : s.directPort;
+      const rates = KLAIPEDA_SEA_USD[port] || KLAIPEDA_SEA_USD.NJ;
+      return { amount: rates[s.directSize] || rates.sedan, note: `${port || "NJ"} → Клайпеда, прайс 29.09` };
+    }
+    case "directForwarding": return euro(s.directContainer === "3" ? 310 : 280);
+    case "directTransport": return euro(s.directDestination === "region" ? 700 : 650,
+      s.directDestination === "region" ? ", регион (+50 €)" : ", Минск");
+    case "directLoading": return euro(15);
+    case "directService": return { amount: 100, note: "прайс 29.09" };
+    case "directEvLoading": return { amount: ["electric", "hybrid"].includes(s.fuel) ? 150 : 0, note: "$150 для электро и гибрида" };
+    case "directDocuments": return { amount: s.directDocuments === "export" ? 250 : 0, note: "Bill of Sale / Parts Only — $250, отправка из NJ" };
+  }
+}
+
 // Сумма строки затрат (+ пояснение для автоматических строк).
 export function costDetail(item, s) {
+  if (item.kind?.startsWith("direct")) return directCost(item.kind, s) || { amount: 0 };
   switch (item.kind) {
     case "service": return { amount: num(s.servicePackage) };
     case "shipping": return { amount: num(s.shippingPoti) };
@@ -353,11 +397,14 @@ export const costValue = (item, s) => costDetail(item, s).amount;
 export function compute(s) {
   const lot = num(s.lotPrice);
   const warnings = [];
-  const rows = s.costs.map((c) => {
+  const rows = costsForMarket(s).map((c) => {
     const d = costDetail(c, s);
     if (d.warn) warnings.push(d.warn);
     return { ...c, amount: d.amount, note: d.note };
   });
+  if (s.market === "by_direct" && s.directPort === "FL" && s.directDocuments !== "export") {
+    warnings.push("По прайсу авто из FL отправляют через порт GA. Стоимость доставки по США уточните у менеджера.");
+  }
   if (s.market === "ru" && !num(s.powerHp)) warnings.push(s.vehicle === "moto"
     ? "Для РФ укажите мощность в л.с. — свыше 150 л.с. платится акциз."
     : "Для РФ укажите мощность в л.с. — от неё зависит утильсбор.");
@@ -382,7 +429,7 @@ function breakEvenBid(s) {
   const pct = num(s.markupPct) / 100;
   const priceAt = (bid) => {
     const st = { ...s, lotPrice: bid };
-    const other = st.costs.reduce((a, c) => a + costValue(c, st), 0);
+    const other = costsForMarket(st).reduce((a, c) => a + costValue(c, st), 0);
     return (bid + other) * (1 + pct);
   };
   if (priceAt(0) > market) return 0;

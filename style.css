@@ -150,7 +150,8 @@ td:last-child { width: 36px; text-align: center; }
   .calc-switch { min-width: 100%; }
 }
 
-.market-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; padding: 2px; gap: 2px; background: var(--bg); }
+.market-switch { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 9px; padding: 2px; gap: 2px; background: var(--bg); }
+.card-head:has(.market-switch) { flex-wrap: wrap; }
 .market-switch button { border: 0; background: transparent; padding: 6px 12px; border-radius: 7px; }
 .market-switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .market-switch button[aria-pressed="true"]:hover { color: #fff; }

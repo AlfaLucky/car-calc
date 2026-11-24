@@ -1,8 +1,8 @@
-import { compute, carAge, byCarAgeGroup, costsForMarket, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=13";
+import { compute, carAge, byCarAgeGroup, costsForMarket, costDetail, deliveryRoute, auctionFeeBreakdown, PLATFORM_FIXED } from "./calc.js?v=14";
 import {
   defaultCalc as baseCalc, defaultCosts as baseCosts, defaultPerMarket, SERVICE_PACKAGES, MARKETS,
   FUELS as CAR_FUELS, FUELS_MOTO, manualDefaultsFor, PER_MARKET_FIELDS, DIRECT_COSTS, DIRECT_MANUAL_DEFAULTS,
-} from "./defaults.js?v=13";
+} from "./defaults.js?v=14";
 
 // Страница машин (index.html) или мотоциклов (moto.html): у каждой свой список расчётов.
 const VEHICLE = document.body.dataset.vehicle === "moto" ? "moto" : "car";
@@ -15,6 +15,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const fmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 const money = (v) => "$" + fmt.format(Math.round(v));
+const moneyPrecise = (v) => "$" + v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const uid = () => Math.random().toString(36).slice(2, 10);
 const MARKET_IDS = Object.keys(MARKETS);
 
@@ -175,6 +176,28 @@ function renderByCustomsValue() {
   field.hidden = !["by", "by_direct"].includes(c.market) || c.fuel === "electric" || byCarAgeGroup(c) !== 0;
 }
 
+function renderDeliveryRoute() {
+  const title = $("#directRouteTitle");
+  if (!title) return;
+  const c = cur();
+  const route = deliveryRoute(c);
+  const klaipeda = route.via === "klaipeda";
+  title.textContent = klaipeda ? "США → Клайпеда → Беларусь" : "США → Поти → Беларусь";
+  $("#directRouteStatus").textContent = route.reason;
+  $("#directContainerField").hidden = !klaipeda;
+  $("#directSeaQuoteField").hidden = !klaipeda || c.directSize !== "oversize";
+  $('[data-field="directSize"] option[value="xl"]').textContent = klaipeda
+    ? "XL SUV — Ford Explorer и схожие" : "Большой SUV — BMW X7 / Audi Q7";
+  const destination = $('[data-field="directDestination"]');
+  const minsk = costDetail({ kind: "directTransport" }, { ...c, directDestination: "minsk" });
+  const region = costDetail({ kind: "directTransport" }, { ...c, directDestination: "region" });
+  destination.options[0].textContent = klaipeda ? "Минск — 650 €" : `Минск — ${money(minsk.amount)}`;
+  destination.options[1].textContent = klaipeda ? "Регион — 700 €" : `Регион — ${money(region.amount)}`;
+  $("#directTariffNote").textContent = klaipeda
+    ? "Прайс Lion Trans, 29.09. Погрузка на автовоз — 15 €, услуга — $100, электро/гибрид — ещё $150. XL SUV — морской тариф седана +$200."
+    : "Прайс Lion Trans, 29.09. Экспедирование и THC — $200, услуга — $100, электро/гибрид — ещё $150. Автовоз включает терминальные сборы, погрузку, обеспечение, фото и оформление. Бесплатное хранение — при оплате до судозахода и перевозки Поти → Минск за 14 дней.";
+}
+
 function renderMarket() {
   const m = cur().market;
   $$(".market-switch button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.market === m)));
@@ -185,6 +208,7 @@ function renderMarket() {
     el.hidden = !(okM && okF);
   });
   renderByCustomsValue();
+  renderDeliveryRoute();
   $$(".mk").forEach((el) => { el.textContent = MARKETS[m].short; });
   // Мощность нужна только РФ, но показываем и для электро/гибрида как справку — достаточно РФ.
 }
@@ -225,6 +249,7 @@ function renderFields() {
   });
   fillServiceSelect();
   renderServiceText();
+  renderDeliveryRoute();
 }
 
 const KIND_HINT = {
@@ -244,9 +269,10 @@ function renderCosts() {
     const tr = document.createElement("tr");
     tr.dataset.id = item.id;
     if (item.kind) {
+      const detail = costDetail(item, effective(c));
       tr.className = "auto";
       tr.innerHTML = `<td class="lbl"><span class="lbl-text"></span><span class="badge"></span></td><td class="num"><span class="auto-val"></span></td><td></td>`;
-      tr.querySelector(".lbl-text").textContent = item.label;
+      tr.querySelector(".lbl-text").textContent = detail.label || item.label;
       tr.querySelector(".badge").textContent = KIND_HINT[item.kind] ? "авто · " + KIND_HINT[item.kind] : "";
     } else {
       tr.innerHTML = `<td><input class="c-label" type="text" aria-label="Наименование"></td>
@@ -274,7 +300,8 @@ function recalc() {
     if (!row.kind) continue;
     const tr = document.querySelector(`tr[data-id="${row.id}"]`);
     if (!tr) continue;
-    tr.querySelector(".auto-val").textContent = money(row.amount);
+    tr.querySelector(".auto-val").textContent = row.precision === 2 ? moneyPrecise(row.amount) : money(row.amount);
+    tr.querySelector(".lbl-text").textContent = row.label;
     tr.classList.toggle("zero", !row.amount);
     if (row.note) tr.querySelector(".badge").textContent = "авто · " + row.note;
   }
@@ -342,7 +369,8 @@ async function fetchRates(manual) {
 
 // ---------- события ----------
 const NUMERIC = new Set(["repairCost", "shippingPoti", "servicePackage", "lotPrice", "engineCc", "powerHp", "age",
-  "eurUsd", "usdRub", "usdGel", "usdByn", "markupPct", "marketMin", "byCustomsValueUsd", "directUsShipping"]);
+  "eurUsd", "usdRub", "usdGel", "usdByn", "markupPct", "marketMin", "byCustomsValueUsd", "directUsShipping", "groundClearanceMm", "directSeaQuoteUsd"]);
+const ROUTE_FIELDS = new Set(["engineCc", "groundClearanceMm", "prodDate", "age", "directCustomsProvider", "directSize"]);
 
 document.addEventListener("input", (e) => {
   const el = e.target;
@@ -367,6 +395,10 @@ document.addEventListener("input", (e) => {
     if (f === "fuel") renderMarket();
     if (f === "servicePackage") renderServiceText();
     if (f === "directDocuments") renderFields();
+    if (c.market === "by_direct" && ROUTE_FIELDS.has(f)) {
+      renderDeliveryRoute();
+      renderCosts();
+    }
   } else if (el.classList.contains("c-label") || el.classList.contains("c-value")) {
     const tr = el.closest("tr");
     const item = c.costs.find((x) => x.id === tr.dataset.id);

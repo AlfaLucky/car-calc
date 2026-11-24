@@ -58,13 +58,16 @@ export const manualDefaultsFor = (vehicle) => (vehicle === "moto" ? MOTO_MANUAL_
 export const DIRECT_MANUAL_DEFAULTS = { c2: 500, c11: 15, c15: 40, c16: 90, c17: 60 };
 export const DIRECT_COSTS = [
   { id: "directUs", label: "Доставка по США до порта", kind: "directUs" },
-  { id: "directSea", label: "Море США → Клайпеда", kind: "directSea" },
-  { id: "directForwarding", label: "Экспедирование в Клайпеде", kind: "directForwarding" },
-  { id: "directTransport", label: "Автовоз Клайпеда → Беларусь", kind: "directTransport" },
+  { id: "directSea", label: "Морская доставка", kind: "directSea" },
+  { id: "directForwarding", label: "Экспедирование / портовые сборы", kind: "directForwarding" },
+  { id: "directTransport", label: "Автовоз до Беларуси", kind: "directTransport" },
   { id: "directLoading", label: "Погрузка на автовоз", kind: "directLoading" },
   { id: "directService", label: "Услуга перевозчика", kind: "directService" },
   { id: "directEvLoading", label: "Погрузка электро / гибрида", kind: "directEvLoading" },
   { id: "directDocuments", label: "Экспортные документы", kind: "directDocuments" },
+  { id: "directCustomsFee", label: "Таможенный сбор", kind: "directCustomsFee" },
+  { id: "directBroker", label: "Таможенный брокер", kind: "directBroker" },
+  { id: "directWarehouse", label: "Услуги СВХ", kind: "directWarehouse" },
 ];
 
 export function defaultCosts(vehicle = "car") {
@@ -160,6 +163,9 @@ export function defaultCalc(vehicle = "car") {
     directDestination: "minsk",
     directDocuments: "standard",
     directUsShipping: "",
+    groundClearanceMm: "",
+    directCustomsProvider: "lion",
+    directSeaQuoteUsd: "",
     repairCost: 3000,
     markupPct: 30,
     perMarket: defaultPerMarket("car"),

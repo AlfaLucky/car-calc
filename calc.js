@@ -344,16 +344,57 @@ const KLAIPEDA_SEA_USD = {
   TX: { sedan: 900, suv: 1000, xl: 1100 },
   CA: { sedan: 1250, suv: 1400, xl: 1450 },
 };
+// Lion Trans, «Прайс Поти», 29.09, стр. 2.
+const POTI_SEA_USD = {
+  NJ: { sedan: 850, suv: 950, xl: 1150, oversize: 1500 },
+  GA: { sedan: 850, suv: 950, xl: 1150, oversize: 1500 },
+  FL: { sedan: 950, suv: 1050, xl: 1150, oversize: 1700 },
+  TX: { sedan: 1150, suv: 1250, xl: 1350, oversize: 1800 },
+  CA: { sedan: 1450, suv: 1550, xl: 1750, oversize: 2500 },
+};
+const POTI_TRANSPORT_USD = { sedan: 2150, suv: 2150, xl: 2350, oversize: 4300 };
+const DIRECT_CUSTOMS_USD = { directCustomsFee: 40.08, directBroker: 100.19, directWarehouse: 116.89 };
 const DIRECT_EXCLUDED = new Set(["shipping", "service", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c12", "c13"]);
 
+// Правило маршрутизации, заданное пользователем. Клиренс ограничен для всех авто.
+export function deliveryRoute(s, today = new Date()) {
+  const clearance = num(s.groundClearanceMm);
+  if (clearance <= 0) return {
+    via: "poti",
+    reason: "Предварительно через Грузию (Поти) — укажите клиренс для подбора маршрута.",
+    warn: "Укажите клиренс — пока рассчитана доставка через Грузию (Поти).",
+  };
+  if (clearance > 165) return { via: "poti", reason: "Через Грузию (Поти) — клиренс больше 165 мм." };
+  const cc = num(s.engineCc);
+  if ((cc > 0 && cc <= 1900) || byCarAgeGroup(s, today) === 2) {
+    return { via: "klaipeda", reason: "Через Клайпеду — клиренс до 165 мм, объём до 1,9 л или возраст старше 5 лет." };
+  }
+  if (cc <= 0) return {
+    via: "poti",
+    reason: "Предварительно через Грузию (Поти) — укажите объём двигателя.",
+    warn: "Укажите объём двигателя для подбора маршрута.",
+  };
+  return { via: "poti", reason: "Через Грузию (Поти) — объём больше 1,9 л, возраст не превышает 5 лет." };
+}
+
 export function costsForMarket(s) {
+  const klaipeda = s.market === "by_direct" && deliveryRoute(s).via === "klaipeda";
+  const carrierCustoms = s.directCustomsProvider !== "manual";
   return s.costs.filter((row) => {
+    if (Object.hasOwn(DIRECT_CUSTOMS_USD, row.kind)) return s.market === "by_direct" && carrierCustoms;
+    if (row.kind === "directLoading") return klaipeda;
     if (row.kind?.startsWith("direct")) return s.market === "by_direct";
+    if (s.market === "by_direct" && carrierCustoms && ["c15", "c16", "c17"].includes(row.id)) return false;
     return s.market !== "by_direct" || !DIRECT_EXCLUDED.has(row.kind || row.id);
   });
 }
 
 function directCost(kind, s) {
+  if (Object.hasOwn(DIRECT_CUSTOMS_USD, kind)) {
+    return { amount: DIRECT_CUSTOMS_USD[kind], note: "Lion Trans, сумма в USD из предложения", precision: 2 };
+  }
+  const klaipeda = deliveryRoute(s).via === "klaipeda";
+  const region = s.directDestination === "region";
   const eurUsd = num(s.eurUsd) || 1;
   const euro = (amount, note) => ({ amount: amount * eurUsd, note: `${amount} € → $ по курсу${note || ""}` });
   switch (kind) {
@@ -365,12 +406,29 @@ function directCost(kind, s) {
     };
     case "directSea": {
       const port = s.directDocuments === "export" ? "NJ" : s.directPort;
-      const rates = KLAIPEDA_SEA_USD[port] || KLAIPEDA_SEA_USD.NJ;
-      return { amount: rates[s.directSize] || rates.sedan, note: `${port || "NJ"} → Клайпеда, прайс 29.09` };
+      const table = klaipeda ? KLAIPEDA_SEA_USD : POTI_SEA_USD;
+      const rates = table[port] || table.NJ;
+      if (klaipeda && s.directSize === "oversize") return {
+        amount: num(s.directSeaQuoteUsd),
+        label: "Море США → Клайпеда",
+        note: "Oversize — индивидуальная стоимость перевозчика",
+        warn: num(s.directSeaQuoteUsd) > 0 ? undefined : "Для Oversize через Клайпеду укажите морской тариф — в прайсе он отсутствует.",
+      };
+      const destination = klaipeda ? "Клайпеда" : "Поти";
+      return { amount: rates[s.directSize] || rates.sedan, label: `Море США → ${destination}`, note: `${port || "NJ"} → ${destination}, прайс 29.09` };
     }
-    case "directForwarding": return euro(s.directContainer === "3" ? 310 : 280);
-    case "directTransport": return euro(s.directDestination === "region" ? 700 : 650,
-      s.directDestination === "region" ? ", регион (+50 €)" : ", Минск");
+    case "directForwarding": return klaipeda
+      ? { ...euro(s.directContainer === "3" ? 310 : 280), label: "Экспедирование в Клайпеде" }
+      : { amount: 200, label: "Экспедирование и THC в Поти", note: "Поти, экспедирование и портовые сборы THC" };
+    case "directTransport": {
+      if (klaipeda) return { ...euro(region ? 700 : 650, region ? ", регион (+50 €)" : ", Минск"), label: "Автовоз Клайпеда → Беларусь" };
+      const base = POTI_TRANSPORT_USD[s.directSize] || POTI_TRANSPORT_USD.sedan;
+      return {
+        amount: base + (region ? 100 : 0),
+        label: "Автовоз Поти → Беларусь",
+        note: `${region ? "регион (+$100)" : "Минск"}, включает терминал, погрузку, обеспечение, фото и оформление`,
+      };
+    }
     case "directLoading": return euro(15);
     case "directService": return { amount: 100, note: "прайс 29.09" };
     case "directEvLoading": return { amount: ["electric", "hybrid"].includes(s.fuel) ? 150 : 0, note: "$150 для электро и гибрида" };
@@ -400,8 +458,12 @@ export function compute(s) {
   const rows = costsForMarket(s).map((c) => {
     const d = costDetail(c, s);
     if (d.warn) warnings.push(d.warn);
-    return { ...c, amount: d.amount, note: d.note };
+    return { ...c, label: d.label || c.label, amount: d.amount, note: d.note, precision: d.precision };
   });
+  if (s.market === "by_direct") {
+    const route = deliveryRoute(s);
+    if (route.warn) warnings.push(route.warn);
+  }
   if (s.market === "by_direct" && s.directPort === "FL" && s.directDocuments !== "export") {
     warnings.push("По прайсу авто из FL отправляют через порт GA. Стоимость доставки по США уточните у менеджера.");
   }

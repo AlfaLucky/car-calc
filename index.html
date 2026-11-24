@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Просчёт машины</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <header class="topbar">
@@ -57,6 +57,8 @@
             <select data-field="fuel"></select></label>
           <label><span>Объём двигателя, см³</span>
             <input data-field="engineCc" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label data-markets="by_direct"><span>Клиренс, мм</span>
+            <input data-field="groundClearanceMm" type="number" min="1" step="1" inputmode="decimal" placeholder="Например, 165"></label>
           <label data-markets="ru"><span>Мощность, л.с. <small>(гибрид — ДВС + электро)</small></span>
             <input data-field="powerHp" type="number" min="0" step="1" inputmode="numeric"></label>
           <label data-markets="ru"><span>Ввоз в РФ</span>
@@ -95,23 +97,30 @@
       </section>
 
       <section class="card" data-markets="by_direct" hidden>
-        <h2>США → Клайпеда → Беларусь</h2>
+        <h2 id="directRouteTitle">Доставка в Беларусь</h2>
+        <p class="note" id="directRouteStatus" role="status"></p>
+        <p class="note">Клайпеда — клиренс до 165 мм включительно для всех машин. Дополнительно — объём до 1 900 см³ включительно или возраст старше 5 лет. Для остальных машин — Грузия (Поти).</p>
         <div class="grid">
           <label><span>Порт / штат отправления в США</span>
             <select data-field="directPort"><option value="NJ">NJ — Нью-Джерси</option><option value="GA">GA — Джорджия</option><option value="FL">FL — Флорида</option><option value="TX">TX — Техас</option><option value="CA">CA — Калифорния</option></select></label>
           <label><span>Размер автомобиля</span>
-            <select data-field="directSize"><option value="sedan">Седан</option><option value="suv">SUV — BMW X5 и схожие</option><option value="xl">XL SUV — Ford Explorer и схожие</option></select></label>
+            <select data-field="directSize"><option value="sedan">Седан</option><option value="suv">SUV — BMW X5 и схожие</option><option value="xl">XL SUV — Ford Explorer и схожие</option><option value="oversize">Oversize — RAM 1500 и схожие</option></select></label>
           <label><span>Доставка по США до порта, $</span>
             <input data-field="directUsShipping" type="number" min="0" step="1" inputmode="decimal" placeholder="Уточните у перевозчика"></label>
-          <label><span>Автомобилей в контейнере</span>
+          <label id="directContainerField"><span>Автомобилей в контейнере</span>
             <select data-field="directContainer"><option value="4">4 — экспедирование 280 €</option><option value="3">3 — экспедирование 310 €</option></select></label>
           <label><span>Место доставки в Беларуси</span>
             <select data-field="directDestination"><option value="minsk">Минск — 650 €</option><option value="region">Регион — 700 €</option></select></label>
           <label><span>Экспортные документы</span>
             <select data-field="directDocuments"><option value="standard">Стандартные</option><option value="export">Bill of Sale / Parts Only — $250, порт NJ</option></select></label>
+          <label id="directSeaQuoteField" hidden><span>Море для Oversize до Клайпеды, $</span>
+            <input data-field="directSeaQuoteUsd" type="number" min="0" step="1" inputmode="decimal" placeholder="Уточните у перевозчика"></label>
+          <label class="span2"><span>Таможенное оформление в Беларуси</span>
+            <select data-field="directCustomsProvider"><option value="lion">Через Lion Trans — $257,16</option><option value="manual">Свои суммы — в таблице затрат</option></select>
+            <small class="hint">Lion Trans — таможенный сбор $40,08, брокер $100,19, СВХ $116,89.</small></label>
         </div>
-        <p class="note">Тарифы Lion Trans из прайса «Клайпеда», 29.09. Погрузка на автовоз — 15 €, услуга — $100, погрузка электро/гибрида — ещё $150. Для XL SUV к морскому тарифу седана добавляется $200.</p>
-        <p class="note">Расходы на оформление в Беларуси, услуги льготника и восстановление — редактируемые оценки калькулятора. Проверьте их для своей машины.</p>
+        <p class="note" id="directTariffNote"></p>
+        <p class="note">Услуги льготника, страховка и восстановление — редактируемые оценки калькулятора. При выборе своего оформления расходы на таможню задаются в таблице затрат.</p>
       </section>
 
       <section class="card">
@@ -164,6 +173,6 @@
   <footer class="foot">Данные хранятся в этом браузере. Чтобы перенести расчёт — «Ссылка» или «Экспорт».</footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js?v=13"></script>
+  <script type="module" src="app.js?v=14"></script>
 </body>
 </html>
